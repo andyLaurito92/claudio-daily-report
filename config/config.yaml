@@ -1,0 +1,33 @@
+reading_time_minutes: 10
+categories:
+- name: Philosophy
+  weight: 2
+  description: General philosophy news, essays, and discussions
+  sources:
+  - url: https://aeon.co/feed.rss
+    type: rss
+- name: AI
+  weight: 2
+  description: Artificial intelligence news and research
+  sources:
+  - url: https://www.technologyreview.com/feed/
+    type: rss
+  - url: https://openai.com/news/rss.xml
+    type: rss
+  - url: https://www.therundown.ai/index.xml
+    type: rss
+  - url: https://www.theneuron.ai/index.xml
+    type: rss
+- name: Education
+  weight: 1
+  description: Early childhood education focused on children aged 2-3 years
+  sources:
+  - url: https://news.stanford.edu/topic/education/feed/
+    type: rss
+output:
+  dir: output
+data_dir: data
+llm:
+  provider: ollama
+  model: qwen2.5:3b
+  ollama_base_url: http://localhost:11434

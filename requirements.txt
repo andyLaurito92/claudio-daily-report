@@ -1,0 +1,7 @@
+anthropic
+feedparser
+pyyaml
+markdown
+flask
+python-dotenv
+openai
