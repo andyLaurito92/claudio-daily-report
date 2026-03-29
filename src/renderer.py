@@ -9,6 +9,19 @@ _PALETTE = ["#4a6fa5", "#5e8a5e", "#8b5e6b", "#7a6e4b", "#5e7a8b"]
 
 def _wrap_articles(html: str) -> str:
     """Wrap each h3 + following p(s) in an .article card div; open links in new tab."""
+    # Convert AI-generated "Title (url)" pattern in h3 to proper anchor tags.
+    # Handles both "https://example.com/path" and bare "example.com/path" forms.
+    def _linkify_h3(m: re.Match) -> str:
+        url = m.group(2)
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        return f'<h3><a href="{url}">{m.group(1).strip()}</a></h3>'
+
+    html = re.sub(
+        r"<h3>([^<]+?)\s*\(((?:https?://)?[A-Za-z0-9][-A-Za-z0-9.]+\.[A-Za-z]{2,}[^)]*)\)</h3>",
+        _linkify_h3,
+        html,
+    )
     wrapped = re.sub(
         r"(<h3>.*?</h3>)((?:\s*<p>.*?</p>)+)",
         lambda m: f'<div class="article">{m.group(1)}{m.group(2)}</div>',
@@ -28,6 +41,7 @@ def _wrap_articles(html: str) -> str:
 # Written with real braces — inserted via str.replace, not .format()
 _CSS = """\
   *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  [hidden] { display: none !important; }
   html { font-size: 16px; }
   body {
     font-family: Georgia, 'Times New Roman', serif;
@@ -337,7 +351,156 @@ _CSS = """\
   }
   .save-btn:hover:not(:disabled) { opacity: 0.82; }
   .save-btn:disabled { opacity: 0.45; cursor: default; }
-  .save-btn.saved { background: #5e8a5e; }"""
+  .save-btn.saved { background: #5e8a5e; }
+
+  /* ── Article cards — full card clickable ── */
+  .article { cursor: pointer; }
+
+  /* ── Manage button ── */
+  #manage-btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.38rem 0.95rem;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 0.8rem; font-weight: 500;
+    color: #3a3a3c; background: #fff;
+    border: 1.5px solid #d1d1d6; border-radius: 999px;
+    cursor: pointer; white-space: nowrap;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  #manage-btn:hover { border-color: #3a3a3c; box-shadow: 0 1px 5px rgba(0,0,0,0.1); }
+
+  /* ── Manage modal overlay ── */
+  .modal-overlay {
+    position: fixed; inset: 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 500;
+    display: flex; align-items: center; justify-content: center;
+    padding: 1rem;
+  }
+  .manage-modal {
+    background: #fff; border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    width: 100%; max-width: 580px; max-height: 85vh;
+    display: flex; flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .modal-header {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 1.2rem 1.4rem 1rem;
+    border-bottom: 1px solid #e5e5ea; flex-shrink: 0;
+  }
+  .modal-title { font-size: 1rem; font-weight: 700; color: #1c1c1e; }
+  .modal-close {
+    background: none; border: none; cursor: pointer;
+    color: #8a8a8e; font-size: 1.2rem; line-height: 1;
+    padding: 0.2rem; transition: color 0.12s;
+  }
+  .modal-close:hover { color: #1c1c1e; }
+  .modal-body { overflow-y: auto; padding: 1rem 1.4rem; flex: 1; }
+
+  /* ── Category list items ── */
+  .cat-item {
+    border: 1.5px solid #e5e5ea; border-radius: 10px;
+    margin-bottom: 0.75rem; overflow: hidden;
+  }
+  .cat-header {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.75rem 1rem; background: #fafafa;
+  }
+  .cat-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
+  .cat-name { font-weight: 600; font-size: 0.9rem; color: #1c1c1e; flex: 1; }
+  .cat-weight-badge {
+    font-size: 0.72rem; color: #6b6b6b; background: #e5e5ea;
+    padding: 0.15rem 0.5rem; border-radius: 999px;
+  }
+  .cat-actions { display: flex; gap: 0.3rem; margin-left: 0.3rem; }
+  .cat-action-btn {
+    background: none; border: none; cursor: pointer; color: #8a8a8e;
+    font-size: 0.85rem; padding: 0.25rem 0.4rem; border-radius: 5px;
+    transition: background 0.12s, color 0.12s;
+  }
+  .cat-action-btn:hover { background: #f0f0f5; color: #1c1c1e; }
+  .cat-action-btn.delete:hover { background: #fff5f5; color: #b91c1c; }
+  .cat-body { padding: 0.65rem 1rem 0.75rem; border-top: 1px solid #f0f0f5; }
+  .cat-desc { font-size: 0.82rem; color: #6b6b6b; margin-bottom: 0.65rem; }
+  .source-list { margin: 0; padding: 0; list-style: none; }
+  .source-item {
+    display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0;
+    font-size: 0.78rem; color: #3a3a3c;
+    border-bottom: 1px solid #f5f5f7;
+  }
+  .source-item:last-child { border-bottom: none; }
+  .source-url {
+    flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.75rem; color: #4a4a4e;
+  }
+  .source-remove-btn {
+    flex-shrink: 0; background: none; border: none; cursor: pointer;
+    color: #aeaeb2; font-size: 0.85rem; padding: 0.1rem 0.3rem;
+    border-radius: 4px; transition: color 0.12s, background 0.12s;
+  }
+  .source-remove-btn:hover { color: #b91c1c; background: #fff5f5; }
+  .add-source-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; align-items: center; }
+  .add-source-input {
+    flex: 1; padding: 0.3rem 0.6rem;
+    border: 1.5px solid #d1d1d6; border-radius: 6px;
+    font-size: 0.78rem; color: #1c1c1e; outline: none;
+  }
+  .add-source-input:focus { border-color: #4a6fa5; }
+  .add-source-btn {
+    padding: 0.3rem 0.7rem; background: #1c1c1e; color: #fff;
+    border: none; border-radius: 6px; font-size: 0.78rem; font-weight: 600;
+    cursor: pointer; white-space: nowrap; transition: opacity 0.12s;
+  }
+  .add-source-btn:hover { opacity: 0.8; }
+
+  /* ── Edit / add category forms ── */
+  .edit-form { padding: 0.75rem 1rem; background: #f8f8fa; }
+  .edit-row { display: flex; gap: 0.75rem; margin-bottom: 0.55rem; }
+  .edit-field { flex: 1; }
+  .edit-field.weight-field { flex: 0 0 90px; }
+  .edit-label {
+    display: block; font-size: 0.7rem; font-weight: 600; color: #6b6b6b;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.25rem;
+  }
+  .edit-input {
+    width: 100%; padding: 0.35rem 0.6rem;
+    border: 1.5px solid #d1d1d6; border-radius: 6px;
+    font-size: 0.82rem; color: #1c1c1e; outline: none; background: #fff;
+  }
+  .edit-input:focus { border-color: #4a6fa5; }
+  .edit-actions { display: flex; gap: 0.5rem; justify-content: flex-end; margin-top: 0.4rem; }
+  .edit-save-btn {
+    padding: 0.35rem 0.85rem; background: #1c1c1e; color: #fff;
+    border: none; border-radius: 6px; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.12s;
+  }
+  .edit-save-btn:hover { opacity: 0.8; }
+  .edit-cancel-btn {
+    padding: 0.35rem 0.75rem; background: none; color: #6b6b6b;
+    border: 1.5px solid #d1d1d6; border-radius: 6px;
+    font-size: 0.8rem; cursor: pointer; transition: border-color 0.12s;
+  }
+  .edit-cancel-btn:hover { border-color: #6b6b6b; }
+
+  /* ── Add category ── */
+  .add-cat-section { margin-top: 0.5rem; }
+  .add-cat-btn {
+    width: 100%; padding: 0.6rem; background: none;
+    border: 2px dashed #d1d1d6; border-radius: 10px;
+    color: #6b6b6b; font-size: 0.85rem; font-weight: 500; cursor: pointer;
+    transition: border-color 0.15s, color 0.15s;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .add-cat-btn:hover { border-color: #4a6fa5; color: #4a6fa5; }
+  .add-cat-form {
+    border: 1.5px solid #4a6fa5; border-radius: 10px;
+    padding: 0.85rem 1rem; background: #f0f4fb;
+  }
+  .add-cat-form-title {
+    font-size: 0.78rem; font-weight: 700; color: #4a6fa5;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.7rem;
+  }"""
 
 
 # ── JavaScript ────────────────────────────────────────────────────────────────
@@ -507,6 +670,205 @@ _JS = """\
       btn.disabled = false;
       setTimeout(() => { btn.textContent = 'Save'; }, 1500);
     }
+  }
+
+  // ── Article click-through ────────────────────────────────────────────────────
+  document.querySelectorAll('.article').forEach(function(card) {
+    card.addEventListener('click', function(e) {
+      if (e.target.closest('a')) return;
+      var link = card.querySelector('a[href]');
+      if (link) window.open(link.href, '_blank', 'noopener,noreferrer');
+    });
+  });
+
+  // ── Manage categories modal ──────────────────────────────────────────────────
+  // Enter key on add-source inputs (delegated, avoids inline string escaping)
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    var inp = e.target;
+    if (!inp.classList.contains('add-source-input')) return;
+    var row = inp.closest('.cat-item');
+    if (!row) return;
+    _mgrAddSrc(parseInt(row.dataset.idx, 10));
+  });
+
+  const _MGR_PALETTE = ['#4a6fa5','#5e8a5e','#8b5e6b','#7a6e4b','#5e7a8b'];
+  var _mgrCats = [];
+
+  function openManage() {
+    document.getElementById('manage-overlay').hidden = false;
+    _loadMgrCats();
+  }
+
+  function closeManage() {
+    document.getElementById('manage-overlay').hidden = true;
+  }
+
+  document.addEventListener('click', function(e) {
+    const ov = document.getElementById('manage-overlay');
+    if (ov && e.target === ov) closeManage();
+  });
+
+  async function _loadMgrCats() {
+    const body = document.getElementById('manage-body');
+    body.innerHTML = '<div style="text-align:center;padding:2rem;color:#8a8a8e">Loading\u2026</div>';
+    try {
+      _mgrCats = await fetch('/api/categories').then(r => r.json());
+      _renderMgr();
+    } catch(e) {
+      body.innerHTML = '<div style="color:#b91c1c;padding:1rem">Failed to load categories.</div>';
+    }
+  }
+
+  function _esc(s) {
+    if (!s) return '';
+    return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+  }
+
+  function _renderMgr() {
+    const body = document.getElementById('manage-body');
+    const total = _mgrCats.reduce(function(s,c){ return s + (c.weight||1); }, 0);
+    var html = '';
+    _mgrCats.forEach(function(cat, i) {
+      const pct = total > 0 ? Math.round((cat.weight||1) / total * 100) : 0;
+      const color = _MGR_PALETTE[i % _MGR_PALETTE.length];
+      const sources = cat.sources || [];
+      html += '<div class="cat-item" data-idx="'+i+'">';
+      html += '<div class="cat-header">';
+      html += '<span class="cat-color-dot" style="background:'+color+'"></span>';
+      html += '<span class="cat-name">'+_esc(cat.name)+'</span>';
+      html += '<span class="cat-weight-badge">'+pct+'%\u00b7w'+_esc(cat.weight)+'</span>';
+      html += '<div class="cat-actions">';
+      html += '<button class="cat-action-btn" onclick="_mgrEditCat('+i+')" title="Edit">&#9998;</button>';
+      html += '<button class="cat-action-btn delete" onclick="_mgrDeleteCat('+i+')" title="Delete">&#215;</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '<div class="cat-body">';
+      if (cat.description) html += '<div class="cat-desc">'+_esc(cat.description)+'</div>';
+      html += '<ul class="source-list">';
+      sources.forEach(function(src, si) {
+        html += '<li class="source-item">';
+        html += '<span class="source-url" title="'+_esc(src.url)+'">'+_esc(src.url)+'</span>';
+        html += '<button class="source-remove-btn" onclick="_mgrRemoveSrc('+i+','+si+')" title="Remove">&#x2715;</button>';
+        html += '</li>';
+      });
+      html += '</ul>';
+      html += '<div class="add-source-row">';
+      html += '<input class="add-source-input" id="src-in-'+i+'" type="url" placeholder="https://example.com/feed.rss">';
+      html += '<button class="add-source-btn" onclick="_mgrAddSrc('+i+')">Add RSS</button>';
+      html += '</div>';
+      html += '</div>';
+      html += '</div>';
+    });
+    html += '<div class="add-cat-section" id="add-cat-section">';
+    html += '<button class="add-cat-btn" onclick="_mgrShowAddForm()">+ Add Category</button>';
+    html += '</div>';
+    body.innerHTML = html;
+  }
+
+  function _mgrEditCat(idx) {
+    const cat = _mgrCats[idx];
+    const item = document.querySelector('.cat-item[data-idx="'+idx+'"]');
+    if (!item) return;
+    item.innerHTML = '<div class="edit-form">'
+      + '<div class="edit-row">'
+      + '<div class="edit-field"><label class="edit-label">Name</label>'
+      + '<input class="edit-input" id="ed-name-'+idx+'" value="'+_esc(cat.name)+'"></div>'
+      + '<div class="edit-field weight-field"><label class="edit-label">Weight</label>'
+      + '<input class="edit-input" id="ed-wt-'+idx+'" type="number" min="1" value="'+_esc(cat.weight)+'"></div>'
+      + '</div>'
+      + '<div class="edit-row">'
+      + '<div class="edit-field"><label class="edit-label">Description</label>'
+      + '<input class="edit-input" id="ed-desc-'+idx+'" value="'+_esc(cat.description||'')+'"></div>'
+      + '</div>'
+      + '<div class="edit-actions">'
+      + '<button class="edit-cancel-btn" onclick="_loadMgrCats()">Cancel</button>'
+      + '<button class="edit-save-btn" onclick="_mgrSaveCat('+idx+')">Save</button>'
+      + '</div></div>';
+    document.getElementById('ed-name-'+idx).focus();
+  }
+
+  async function _mgrSaveCat(idx) {
+    const oldName = _mgrCats[idx].name;
+    const name = document.getElementById('ed-name-'+idx).value.trim();
+    const weight = parseInt(document.getElementById('ed-wt-'+idx).value) || 1;
+    const description = document.getElementById('ed-desc-'+idx).value.trim();
+    if (!name) { document.getElementById('ed-name-'+idx).focus(); return; }
+    try {
+      await fetch('/api/categories/'+encodeURIComponent(oldName), {
+        method: 'PUT',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, weight, description}),
+      });
+      await _loadMgrCats();
+    } catch(e) { showError('Failed to save category.'); }
+  }
+
+  async function _mgrDeleteCat(idx) {
+    const cat = _mgrCats[idx];
+    if (!confirm('Delete category "'+cat.name+'"? This cannot be undone.')) return;
+    try {
+      await fetch('/api/categories/'+encodeURIComponent(cat.name), {method:'DELETE'});
+      await _loadMgrCats();
+    } catch(e) { showError('Failed to delete category.'); }
+  }
+
+  async function _mgrAddSrc(idx) {
+    const cat = _mgrCats[idx];
+    const input = document.getElementById('src-in-'+idx);
+    const url = input.value.trim();
+    if (!url) { input.focus(); return; }
+    try {
+      await fetch('/api/categories/'+encodeURIComponent(cat.name)+'/sources', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({url, type:'rss'}),
+      });
+      await _loadMgrCats();
+    } catch(e) { showError('Failed to add source.'); }
+  }
+
+  async function _mgrRemoveSrc(idx, srcIdx) {
+    const cat = _mgrCats[idx];
+    try {
+      await fetch('/api/categories/'+encodeURIComponent(cat.name)+'/sources/'+srcIdx, {method:'DELETE'});
+      await _loadMgrCats();
+    } catch(e) { showError('Failed to remove source.'); }
+  }
+
+  function _mgrShowAddForm() {
+    document.getElementById('add-cat-section').innerHTML = '<div class="add-cat-form">'
+      + '<div class="add-cat-form-title">New Category</div>'
+      + '<div class="edit-row">'
+      + '<div class="edit-field"><label class="edit-label">Name</label>'
+      + '<input class="edit-input" id="nc-name" placeholder="e.g. Science"></div>'
+      + '<div class="edit-field weight-field"><label class="edit-label">Weight</label>'
+      + '<input class="edit-input" id="nc-wt" type="number" min="1" value="1"></div>'
+      + '</div>'
+      + '<div class="edit-row">'
+      + '<div class="edit-field"><label class="edit-label">Description (optional)</label>'
+      + '<input class="edit-input" id="nc-desc" placeholder="Topic focus\u2026"></div>'
+      + '</div>'
+      + '<div class="edit-actions">'
+      + '<button class="edit-cancel-btn" onclick="_renderMgr()">Cancel</button>'
+      + '<button class="edit-save-btn" onclick="_mgrSaveNew()">Add</button>'
+      + '</div></div>';
+    document.getElementById('nc-name').focus();
+  }
+
+  async function _mgrSaveNew() {
+    const name = document.getElementById('nc-name').value.trim();
+    const weight = parseInt(document.getElementById('nc-wt').value) || 1;
+    const description = document.getElementById('nc-desc').value.trim();
+    if (!name) { document.getElementById('nc-name').focus(); return; }
+    try {
+      await fetch('/api/categories', {
+        method: 'POST',
+        headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({name, weight, description}),
+      });
+      await _loadMgrCats();
+    } catch(e) { showError('Failed to add category.'); }
   }"""
 
 
@@ -561,6 +923,10 @@ __CSS__
             <button id="save-settings-btn" class="save-btn" onclick="saveSettings()">Save</button>
           </div>
         </div>
+        <button id="manage-btn" onclick="openManage()">
+          <span class="btn-icon">&#9776;</span>
+          <span>Categories</span>
+        </button>
         <button id="update-btn" onclick="triggerUpdate()">
           <span class="btn-icon" id="btn-icon">&#x21BB;</span>
           <span id="btn-label">Update Feed</span>
@@ -573,6 +939,17 @@ __CSS__
 __SECTIONS__
   </div>
 </div>
+
+<div id="manage-overlay" class="modal-overlay" hidden>
+  <div class="manage-modal">
+    <div class="modal-header">
+      <span class="modal-title">Manage Categories</span>
+      <button class="modal-close" onclick="closeManage()" aria-label="Close">&times;</button>
+    </div>
+    <div class="modal-body" id="manage-body"></div>
+  </div>
+</div>
+
 <script>
 __JS__
 </script>

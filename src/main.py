@@ -1,5 +1,6 @@
 """Entry point: fetch → summarize → render → save."""
 
+import json
 import os
 import sys
 from datetime import date
@@ -78,6 +79,15 @@ def main() -> None:
     output_path = os.path.join(output_dir, f"{today.isoformat()}.html")
     with open(output_path, "w", encoding="utf-8") as f:
         f.write(html)
+
+    # Save summary data so the server can re-render with latest UI
+    json_path = os.path.join(output_dir, f"{today.isoformat()}.json")
+    with open(json_path, "w", encoding="utf-8") as f:
+        json.dump({
+            "date": today.isoformat(),
+            "reading_time_minutes": reading_time,
+            "summaries": summaries,
+        }, f, ensure_ascii=False, indent=2)
 
     # Persist seen IDs
     save_seen_ids(data_dir, seen_ids | new_ids)
