@@ -31,12 +31,29 @@ def _llm_config() -> dict:
 def _embed_ollama(texts: list[str], base_url: str) -> list[list[float]]:
     import urllib.request
     import json
-    url = base_url.rstrip("/") + "/api/embed"
-    payload = json.dumps({"model": _EMBED_MODEL, "input": texts}).encode()
-    req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = json.loads(resp.read())
-    return data["embeddings"]
+    base = base_url.rstrip("/")
+
+    # Try new batch endpoint first (/api/embed, Ollama ≥ 0.5)
+    try:
+        url = base + "/api/embed"
+        payload = json.dumps({"model": _EMBED_MODEL, "input": texts}).encode()
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=60) as resp:
+            data = json.loads(resp.read())
+        return data["embeddings"]
+    except Exception:
+        pass
+
+    # Fall back to legacy single-prompt endpoint (/api/embeddings, Ollama < 0.5)
+    results = []
+    for text in texts:
+        url = base + "/api/embeddings"
+        payload = json.dumps({"model": _EMBED_MODEL, "prompt": text}).encode()
+        req = urllib.request.Request(url, data=payload, headers={"Content-Type": "application/json"})
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            data = json.loads(resp.read())
+        results.append(data["embedding"])
+    return results
 
 
 def _embed_anthropic(texts: list[str]) -> list[list[float]]:

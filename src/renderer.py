@@ -1133,8 +1133,9 @@ _JS = """\
   function _arcRenderNode(node, breadcrumb) {
     const el = document.getElementById('explore-content');
     let html = '<div class="arc-breadcrumb">';
+    html += '<span class="arc-breadcrumb-item" id="arc-bc-root">All categories</span>';
     breadcrumb.forEach(function(crumb, i) {
-      if (i > 0) html += '<span class="arc-breadcrumb-sep">›</span>';
+      html += '<span class="arc-breadcrumb-sep">›</span>';
       if (i < breadcrumb.length - 1) {
         html += '<span class="arc-breadcrumb-item" data-depth="'+i+'">'+_esc(crumb.label)+'</span>';
       } else {
@@ -1167,7 +1168,9 @@ _JS = """\
     el.innerHTML = html;
 
     // Breadcrumb navigation
-    el.querySelectorAll('.arc-breadcrumb-item').forEach(function(item) {
+    const rootCrumb = el.querySelector('#arc-bc-root');
+    if (rootCrumb) rootCrumb.addEventListener('click', _arcShowRoot);
+    el.querySelectorAll('.arc-breadcrumb-item[data-depth]').forEach(function(item) {
       item.addEventListener('click', function() {
         const depth = parseInt(item.dataset.depth, 10);
         const crumb = breadcrumb[depth];
