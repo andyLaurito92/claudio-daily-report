@@ -8,9 +8,12 @@ _PALETTE = ["#4a6fa5", "#5e8a5e", "#8b5e6b", "#7a6e4b", "#5e7a8b"]
 
 
 def _wrap_articles(html: str) -> str:
-    """Wrap each h3 + following p(s) in an .article card div; open links in new tab."""
-    # Convert AI-generated "Title (url)" pattern in h3 to proper anchor tags.
-    # Handles both "https://example.com/path" and bare "example.com/path" forms.
+    """Wrap each h3 + following p(s) in a clickable .article card.
+
+    URLs are stored in data-href on the card — not shown in the title.
+    A small ↗ button at bottom-right lets users inspect/copy the source URL.
+    """
+    # Step 1: convert legacy "Title (bare-url)" pattern to a proper <a> link
     def _linkify_h3(m: re.Match) -> str:
         url = m.group(2)
         if not url.startswith(("http://", "https://")):
@@ -22,19 +25,39 @@ def _wrap_articles(html: str) -> str:
         _linkify_h3,
         html,
     )
+
+    # Step 2: wrap h3 + p(s) in .article
     wrapped = re.sub(
         r"(<h3>.*?</h3>)((?:\s*<p>.*?</p>)+)",
         lambda m: f'<div class="article">{m.group(1)}{m.group(2)}</div>',
         html,
         flags=re.DOTALL,
     )
-    # Make all links open in a new tab
-    wrapped = re.sub(
-        r'<a href="(https?://[^"]+)"',
-        r'<a href="\1" target="_blank" rel="noopener noreferrer"',
-        wrapped,
+
+    # Step 3: for each card, extract the URL, strip the <a> from h3, add data-href + icon btn
+    def _clean_title(t: str) -> str:
+        """Strip any bare URL or (URL: ...) suffix from a display title."""
+        t = re.sub(r'\s*\(URL:\s*https?://[^)]+\)', '', t)
+        t = re.sub(
+            r'\s*\((?:https?://)?[A-Za-z0-9][-A-Za-z0-9.]+\.[A-Za-z]{2,}[^)]*\)', '', t
+        )
+        return t.strip()
+
+    def _process_card(m: re.Match) -> str:
+        inner = m.group(1)
+        link_m = re.search(
+            r'<h3><a href="(https?://[^"]+)"[^>]*>(.*?)</a></h3>', inner, re.DOTALL
+        )
+        if link_m:
+            url, title = link_m.group(1), _clean_title(link_m.group(2))
+            inner = inner[: link_m.start()] + f"<h3>{title}</h3>" + inner[link_m.end() :]
+            btn = '<button class="article-link-btn" title="View source URL">&#8599;</button>'
+            return f'<div class="article" data-href="{url}">{inner}{btn}</div>'
+        return f'<div class="article">{inner}</div>'
+
+    return re.sub(
+        r'<div class="article">(.*?)</div>', _process_card, wrapped, flags=re.DOTALL
     )
-    return wrapped
 
 
 # ── CSS ───────────────────────────────────────────────────────────────────────
@@ -228,7 +251,8 @@ _CSS = """\
 
   /* ── Article cards ── */
   .article {
-    padding: 1.1rem 1.35rem;
+    position: relative;
+    padding: 1.1rem 1.35rem 2rem;
     background: #fff;
     border-radius: 10px;
     margin-bottom: 0.8rem;
@@ -242,20 +266,50 @@ _CSS = """\
     font-weight: 600;
     line-height: 1.4;
     margin-bottom: 0.4rem;
-  }
-  .article h3 a {
     color: #1c1c1e;
-    text-decoration: none;
-    border-bottom: 1.5px solid #d1d1d6;
-    transition: border-color 0.12s;
   }
-  .article h3 a:hover { border-color: #555; }
   .article p {
     font-size: 0.93rem;
     color: #4a4a4e;
     line-height: 1.65;
   }
   .article em { color: #8a8a8e; }
+
+  /* ── Article link button + tooltip ── */
+  .article-link-btn {
+    position: absolute;
+    bottom: 0.55rem; right: 0.7rem;
+    width: 22px; height: 22px;
+    display: inline-flex; align-items: center; justify-content: center;
+    background: none;
+    border: 1.5px solid #d1d1d6;
+    border-radius: 50%;
+    cursor: pointer;
+    color: #aeaeb2;
+    font-size: 0.72rem;
+    line-height: 1;
+    transition: border-color 0.12s, color 0.12s, background 0.12s;
+    z-index: 1;
+  }
+  .article-link-btn:hover { border-color: #4a6fa5; color: #4a6fa5; background: #f0f4fb; }
+  .link-tooltip {
+    position: absolute;
+    bottom: 2rem; right: 0;
+    background: #1c1c1e;
+    color: #e5e5ea;
+    border-radius: 8px;
+    padding: 0.45rem 0.75rem;
+    font-size: 0.72rem;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+    white-space: normal;
+    word-break: break-all;
+    max-width: min(400px, 90vw);
+    z-index: 50;
+    box-shadow: 0 4px 14px rgba(0,0,0,0.25);
+    pointer-events: auto;
+  }
+  .link-tooltip a { color: #7ab8f5; text-decoration: none; }
+  .link-tooltip a:hover { text-decoration: underline; }
 
   /* ── Empty state ── */
   .empty-state {
@@ -672,13 +726,36 @@ _JS = """\
     }
   }
 
-  // ── Article click-through ────────────────────────────────────────────────────
+  // ── Article cards: click to open, ↗ button to show URL tooltip ─────────────
   document.querySelectorAll('.article').forEach(function(card) {
     card.addEventListener('click', function(e) {
+      if (e.target.closest('.article-link-btn')) return;
+      if (e.target.closest('.link-tooltip')) return;
       if (e.target.closest('a')) return;
-      var link = card.querySelector('a[href]');
-      if (link) window.open(link.href, '_blank', 'noopener,noreferrer');
+      var url = card.dataset.href;
+      if (url) window.open(url, '_blank', 'noopener,noreferrer');
     });
+  });
+
+  document.addEventListener('click', function(e) {
+    var btn = e.target.closest('.article-link-btn');
+    if (btn) {
+      e.stopPropagation();
+      var card = btn.closest('.article');
+      var existing = card.querySelector('.link-tooltip');
+      document.querySelectorAll('.link-tooltip').forEach(function(t) { t.remove(); });
+      if (existing) return;
+      var url = card.dataset.href;
+      if (!url) return;
+      var tt = document.createElement('div');
+      tt.className = 'link-tooltip';
+      tt.innerHTML = '<a href="' + url + '" target="_blank" rel="noopener noreferrer">' + url + '</a>';
+      card.appendChild(tt);
+      return;
+    }
+    if (!e.target.closest('.link-tooltip')) {
+      document.querySelectorAll('.link-tooltip').forEach(function(t) { t.remove(); });
+    }
   });
 
   // ── Manage categories modal ──────────────────────────────────────────────────
@@ -789,13 +866,12 @@ _JS = """\
   }
 
   async function _mgrSaveCat(idx) {
-    const oldName = _mgrCats[idx].name;
     const name = document.getElementById('ed-name-'+idx).value.trim();
     const weight = parseInt(document.getElementById('ed-wt-'+idx).value) || 1;
     const description = document.getElementById('ed-desc-'+idx).value.trim();
     if (!name) { document.getElementById('ed-name-'+idx).focus(); return; }
     try {
-      await fetch('/api/categories/'+encodeURIComponent(oldName), {
+      await fetch('/api/categories/'+idx, {
         method: 'PUT',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({name, weight, description}),
@@ -808,18 +884,17 @@ _JS = """\
     const cat = _mgrCats[idx];
     if (!confirm('Delete category "'+cat.name+'"? This cannot be undone.')) return;
     try {
-      await fetch('/api/categories/'+encodeURIComponent(cat.name), {method:'DELETE'});
+      await fetch('/api/categories/'+idx, {method:'DELETE'});
       await _loadMgrCats();
     } catch(e) { showError('Failed to delete category.'); }
   }
 
   async function _mgrAddSrc(idx) {
-    const cat = _mgrCats[idx];
     const input = document.getElementById('src-in-'+idx);
     const url = input.value.trim();
     if (!url) { input.focus(); return; }
     try {
-      await fetch('/api/categories/'+encodeURIComponent(cat.name)+'/sources', {
+      await fetch('/api/categories/'+idx+'/sources', {
         method: 'POST',
         headers: {'Content-Type':'application/json'},
         body: JSON.stringify({url, type:'rss'}),
@@ -829,9 +904,8 @@ _JS = """\
   }
 
   async function _mgrRemoveSrc(idx, srcIdx) {
-    const cat = _mgrCats[idx];
     try {
-      await fetch('/api/categories/'+encodeURIComponent(cat.name)+'/sources/'+srcIdx, {method:'DELETE'});
+      await fetch('/api/categories/'+idx+'/sources/'+srcIdx, {method:'DELETE'});
       await _loadMgrCats();
     } catch(e) { showError('Failed to remove source.'); }
   }

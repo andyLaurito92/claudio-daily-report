@@ -6,6 +6,10 @@ categories:
   sources:
   - url: https://aeon.co/feed.rss
     type: rss
+  - url: https://plato.stanford.edu/rss/sep.xml
+    type: rss
+  - url: https://thedailyidea.org/feed/
+    type: rss
 - name: AI
   weight: 2
   description: Artificial intelligence news and research
@@ -18,11 +22,31 @@ categories:
     type: rss
   - url: https://www.theneuron.ai/index.xml
     type: rss
+  - url: https://deepmind.google/blog/feed/basic/
+    type: rss
+  - url: https://arstechnica.com/tag/artificial-intelligence/feed/
+    type: rss
+  - url: https://tldr.tech/ai/rss
+    type: rss
+  - url: https://importai.substack.com/feed
+    type: rss
 - name: Education
   weight: 1
   description: Early childhood education focused on children aged 2-3 years
   sources:
   - url: https://news.stanford.edu/topic/education/feed/
+    type: rss
+  - url: https://www.zerotothree.org/feed/
+    type: rss
+  - url: https://childhood101.com/feed/
+    type: rss
+  - url: https://livingmontessorinow.com/feed/
+    type: rss
+- name: Emacs/Emacs Lisp
+  weight: 10
+  description: Stuff related to emacs or emacs lisp
+  sources:
+  - url: https://planet.emacslife.com/atom.xml
     type: rss
 output:
   dir: output

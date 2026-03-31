@@ -1,5 +1,6 @@
 """Summarize articles — supports Anthropic and Ollama (OpenAI-compatible)."""
 
+import re
 from pathlib import Path
 
 import yaml
@@ -81,6 +82,61 @@ def _summarize_ollama(system: str, user: str, model: str, base_url: str) -> str:
     return result
 
 
+def _inject_links(summary_md: str, articles: list[dict]) -> str:
+    """Ensure every ### heading has a link, matching against source articles by title."""
+    # Build a lookup: normalised title -> URL
+    def _norm(s: str) -> str:
+        return re.sub(r"\W+", " ", s).strip().lower()
+
+    lookup: dict[str, str] = {}
+    for a in articles:
+        if a.get("link") and a.get("title"):
+            lookup[_norm(a["title"])] = a["link"]
+
+    def _best_url(heading: str) -> str | None:
+        h = _norm(heading)
+        # Exact match
+        if h in lookup:
+            return lookup[h]
+        # Substring match: article title is contained in heading or vice-versa
+        for norm_title, url in lookup.items():
+            if norm_title and (norm_title in h or h in norm_title):
+                return url
+        # Token overlap: ≥60% of article title tokens appear in heading
+        h_tokens = set(h.split())
+        for norm_title, url in lookup.items():
+            t_tokens = set(norm_title.split())
+            if t_tokens and len(t_tokens & h_tokens) / len(t_tokens) >= 0.6:
+                return url
+        return None
+
+    # Matches a bare URL in parentheses at the end of a heading, e.g. "(example.com/path)"
+    _bare_url_re = re.compile(
+        r'\s*\(((?:https?://)?[A-Za-z0-9][-A-Za-z0-9.]+\.[A-Za-z]{2,}[^)]*)\)$'
+    )
+
+    def _replace(m: re.Match) -> str:
+        title = m.group(1).strip()
+        # Already a proper markdown link — leave it
+        if title.startswith("["):
+            return m.group(0)
+        # Title has a bare URL in parens — strip it and use that URL
+        suffix = _bare_url_re.search(title)
+        if suffix:
+            clean = title[:suffix.start()].strip()
+            url = suffix.group(1)
+            if not url.startswith(("http://", "https://")):
+                url = "https://" + url
+            return f"### [{clean}]({url})"
+        # No URL in title — match against original articles
+        url = _best_url(title)
+        if url:
+            return f"### [{title}]({url})"
+        return m.group(0)
+
+    return re.sub(r"^### (.+)$", _replace, summary_md, flags=re.MULTILINE)
+
+
 def summarize_category(
     name: str,
     description: str,
@@ -98,6 +154,8 @@ def summarize_category(
 
     if provider == "ollama":
         base_url = cfg.get("ollama_base_url", "http://localhost:11434")
-        return _summarize_ollama(system, user, model, base_url)
+        result = _summarize_ollama(system, user, model, base_url)
     else:
-        return _summarize_anthropic(system, user, model)
+        result = _summarize_anthropic(system, user, model)
+
+    return _inject_links(result, articles)

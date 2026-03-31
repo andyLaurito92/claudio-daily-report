@@ -85,20 +85,38 @@ def _rerender_html(html_content: str) -> str:
         html_content, _re.DOTALL
     )
     sections_html = sections_m.group(1).strip() if sections_m else ""
-    # Convert "Title (url)" h3 pattern to proper links for old reports.
-    # Handles both "https://example.com/path" and bare "example.com/path" forms.
+
+    # Convert legacy "Title (bare-url)" h3 pattern to a proper <a> link
     def _linkify(m):
         url = m.group(2)
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
-        return (
-            f'<h3><a href="{url}" target="_blank" rel="noopener noreferrer">'
-            f'{m.group(1).strip()}</a></h3>'
-        )
+        return f'<h3><a href="{url}">{m.group(1).strip()}</a></h3>'
+
     sections_html = _re.sub(
         r'<h3>([^<]+?)\s*\(((?:https?://)?[A-Za-z0-9][-A-Za-z0-9.]+\.[A-Za-z]{2,}[^)]*)\)</h3>',
         _linkify,
         sections_html,
+    )
+
+    # Extract URL from h3 <a> tags → move to data-href on card, add ↗ button
+    def _clean_title(t: str) -> str:
+        t = _re.sub(r'\s*\(URL:\s*https?://[^)]+\)', '', t)
+        t = _re.sub(r'\s*\((?:https?://)?[A-Za-z0-9][-A-Za-z0-9.]+\.[A-Za-z]{2,}[^)]*\)', '', t)
+        return t.strip()
+
+    def _process_card(m):
+        inner = m.group(1)
+        lm = _re.search(r'<h3><a href="(https?://[^"]+)"[^>]*>(.*?)</a></h3>', inner, _re.DOTALL)
+        if lm:
+            url, title = lm.group(1), _clean_title(lm.group(2))
+            inner = inner[:lm.start()] + f"<h3>{title}</h3>" + inner[lm.end():]
+            btn = '<button class="article-link-btn" title="View source URL">&#8599;</button>'
+            return f'<div class="article" data-href="{url}">{inner}{btn}</div>'
+        return f'<div class="article">{inner}</div>'
+
+    sections_html = _re.sub(
+        r'<div class="article">(.*?)</div>', _process_card, sections_html, flags=_re.DOTALL
     )
     return _render(date_str, time_str, badges_html, sections_html)
 
@@ -112,6 +130,12 @@ def index():
             data = json.load(f)
         from datetime import date as _date
         from renderer import render_report
+        from summarizer import _inject_links
+        # Inject article links into summaries that lack them (e.g. non-compliant LLMs)
+        for s in data["summaries"]:
+            article_links = s.get("article_links", [])
+            if article_links:
+                s["summary_md"] = _inject_links(s["summary_md"], article_links)
         return render_report(
             _date.fromisoformat(data["date"]),
             data["summaries"],
@@ -198,57 +222,60 @@ def api_add_category():
     return jsonify({"ok": True})
 
 
-@app.route("/api/categories/<name>", methods=["PUT"])
-def api_update_category(name):
+@app.route("/api/categories/<int:idx>", methods=["PUT"])
+def api_update_category(idx):
     data = request.get_json(force=True)
     cfg = _load_config()
-    for cat in cfg.get("categories", []):
-        if cat["name"] == name:
-            cat["name"] = (data.get("name") or cat["name"]).strip()
-            cat["weight"] = int(data.get("weight", cat.get("weight", 1)))
-            cat["description"] = data.get("description", cat.get("description", ""))
-            _save_config(cfg)
-            return jsonify({"ok": True})
-    return jsonify({"error": "not found"}), 404
-
-
-@app.route("/api/categories/<name>", methods=["DELETE"])
-def api_delete_category(name):
-    cfg = _load_config()
-    cfg["categories"] = [c for c in cfg.get("categories", []) if c["name"] != name]
+    cats = cfg.get("categories", [])
+    if idx < 0 or idx >= len(cats):
+        return jsonify({"error": "not found"}), 404
+    cats[idx]["name"] = (data.get("name") or cats[idx]["name"]).strip()
+    cats[idx]["weight"] = int(data.get("weight", cats[idx].get("weight", 1)))
+    cats[idx]["description"] = data.get("description", cats[idx].get("description", ""))
     _save_config(cfg)
     return jsonify({"ok": True})
 
 
-@app.route("/api/categories/<name>/sources", methods=["POST"])
-def api_add_source(name):
+@app.route("/api/categories/<int:idx>", methods=["DELETE"])
+def api_delete_category(idx):
+    cfg = _load_config()
+    cats = cfg.get("categories", [])
+    if idx < 0 or idx >= len(cats):
+        return jsonify({"error": "not found"}), 404
+    cats.pop(idx)
+    _save_config(cfg)
+    return jsonify({"ok": True})
+
+
+@app.route("/api/categories/<int:idx>/sources", methods=["POST"])
+def api_add_source(idx):
     data = request.get_json(force=True)
     url = (data.get("url") or "").strip()
     if not url:
         return jsonify({"error": "url required"}), 400
     cfg = _load_config()
-    for cat in cfg.get("categories", []):
-        if cat["name"] == name:
-            cat.setdefault("sources", []).append({
-                "url": url,
-                "type": data.get("type", "rss"),
-            })
-            _save_config(cfg)
-            return jsonify({"ok": True})
-    return jsonify({"error": "not found"}), 404
+    cats = cfg.get("categories", [])
+    if idx < 0 or idx >= len(cats):
+        return jsonify({"error": "not found"}), 404
+    cats[idx].setdefault("sources", []).append({
+        "url": url,
+        "type": data.get("type", "rss"),
+    })
+    _save_config(cfg)
+    return jsonify({"ok": True})
 
 
-@app.route("/api/categories/<name>/sources/<int:idx>", methods=["DELETE"])
-def api_delete_source(name, idx):
+@app.route("/api/categories/<int:idx>/sources/<int:sidx>", methods=["DELETE"])
+def api_delete_source(idx, sidx):
     cfg = _load_config()
-    for cat in cfg.get("categories", []):
-        if cat["name"] == name:
-            sources = cat.get("sources", [])
-            if 0 <= idx < len(sources):
-                sources.pop(idx)
-            _save_config(cfg)
-            return jsonify({"ok": True})
-    return jsonify({"error": "not found"}), 404
+    cats = cfg.get("categories", [])
+    if idx < 0 or idx >= len(cats):
+        return jsonify({"error": "not found"}), 404
+    sources = cats[idx].get("sources", [])
+    if 0 <= sidx < len(sources):
+        sources.pop(sidx)
+    _save_config(cfg)
+    return jsonify({"ok": True})
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

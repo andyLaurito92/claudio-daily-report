@@ -67,6 +67,10 @@ def main() -> None:
                 "weight": weight,
                 "pct": pct,
                 "summary_md": summary_md,
+                "article_links": [
+                    {"title": a["title"], "link": a["link"]}
+                    for a in articles if a.get("link")
+                ],
             }
         )
 
