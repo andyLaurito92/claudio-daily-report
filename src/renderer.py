@@ -554,7 +554,117 @@ _CSS = """\
   .add-cat-form-title {
     font-size: 0.78rem; font-weight: 700; color: #4a6fa5;
     text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.7rem;
-  }"""
+  }
+
+  /* ── Archive button ── */
+  #archive-btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    padding: 0.38rem 0.95rem;
+    background: #fff; border: 1.5px solid #d1d1d6; border-radius: 8px;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+    font-size: 0.82rem; font-weight: 500; color: #3a3a3c; cursor: pointer;
+    transition: border-color 0.15s, box-shadow 0.15s;
+  }
+  #archive-btn:hover { border-color: #3a3a3c; box-shadow: 0 1px 5px rgba(0,0,0,0.1); }
+
+  /* ── Archive modal ── */
+  .archive-modal {
+    background: #fff; border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    width: 100%; max-width: 680px; max-height: 85vh;
+    display: flex; flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .archive-tabs {
+    display: flex; gap: 0; border-bottom: 1px solid #e5e5ea; flex-shrink: 0;
+    padding: 0 1.4rem;
+  }
+  .archive-tab {
+    padding: 0.75rem 1rem; font-size: 0.85rem; font-weight: 600;
+    color: #8a8a8e; border: none; background: none; cursor: pointer;
+    border-bottom: 2.5px solid transparent; margin-bottom: -1px;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .archive-tab.active { color: #4a6fa5; border-bottom-color: #4a6fa5; }
+  .archive-tab-panel { display: none; flex: 1; overflow-y: auto; padding: 1rem 1.4rem; }
+  .archive-tab-panel.active { display: block; }
+
+  /* Explore tab */
+  .arc-cat-list { list-style: none; padding: 0; margin: 0; }
+  .arc-cat-item {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0.7rem 0.9rem; border: 1.5px solid #e5e5ea; border-radius: 10px;
+    margin-bottom: 0.55rem; cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .arc-cat-item:hover { border-color: #4a6fa5; background: #f8f9ff; }
+  .arc-cat-name { font-size: 0.9rem; font-weight: 600; color: #1c1c1e; }
+  .arc-cat-count { font-size: 0.75rem; color: #8a8a8e; }
+  .arc-breadcrumb {
+    display: flex; align-items: center; gap: 0.4rem;
+    font-size: 0.78rem; color: #8a8a8e; margin-bottom: 0.75rem; flex-wrap: wrap;
+  }
+  .arc-breadcrumb-item { cursor: pointer; color: #4a6fa5; }
+  .arc-breadcrumb-item:hover { text-decoration: underline; }
+  .arc-breadcrumb-sep { color: #d1d1d6; }
+  .arc-node-list { list-style: none; padding: 0; margin: 0; }
+  .arc-node-item {
+    padding: 0.65rem 0.9rem; border: 1.5px solid #e5e5ea; border-radius: 10px;
+    margin-bottom: 0.5rem; cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .arc-node-item:hover { border-color: #4a6fa5; background: #f8f9ff; }
+  .arc-node-label { font-size: 0.88rem; font-weight: 600; color: #1c1c1e; }
+  .arc-node-count { font-size: 0.73rem; color: #8a8a8e; margin-top: 0.15rem; }
+  .arc-article-item {
+    display: flex; align-items: flex-start; gap: 0.6rem;
+    padding: 0.6rem 0.9rem; border: 1.5px solid #e5e5ea; border-radius: 10px;
+    margin-bottom: 0.5rem; text-decoration: none;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .arc-article-item:hover { border-color: #4a6fa5; background: #f8f9ff; }
+  .arc-article-title { font-size: 0.85rem; color: #1c1c1e; flex: 1; line-height: 1.4; }
+  .arc-article-ext { font-size: 0.9rem; color: #8a8a8e; flex-shrink: 0; }
+  .arc-loading {
+    text-align: center; padding: 2.5rem 0; color: #8a8a8e; font-size: 0.85rem;
+  }
+  .arc-empty { text-align: center; padding: 2rem 0; color: #aeaeb2; font-size: 0.85rem; }
+
+  /* Search tab */
+  .arc-search-row {
+    display: flex; gap: 0.5rem; margin-bottom: 1rem;
+  }
+  .arc-search-input {
+    flex: 1; padding: 0.5rem 0.8rem;
+    border: 1.5px solid #d1d1d6; border-radius: 8px;
+    font-size: 0.88rem; color: #1c1c1e; outline: none;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .arc-search-input:focus { border-color: #4a6fa5; }
+  .arc-search-btn {
+    padding: 0.5rem 1rem; background: #1c1c1e; color: #fff;
+    border: none; border-radius: 8px; font-size: 0.85rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.12s; white-space: nowrap;
+  }
+  .arc-search-btn:hover { opacity: 0.8; }
+  .arc-result-item {
+    padding: 0.65rem 0.9rem; border: 1.5px solid #e5e5ea; border-radius: 10px;
+    margin-bottom: 0.5rem;
+  }
+  .arc-result-header { display: flex; align-items: flex-start; justify-content: space-between; gap: 0.5rem; }
+  .arc-result-title {
+    font-size: 0.88rem; font-weight: 600; color: #1c1c1e; flex: 1; line-height: 1.4;
+  }
+  .arc-result-link {
+    font-size: 0.78rem; color: #4a6fa5; text-decoration: none; white-space: nowrap; flex-shrink: 0;
+  }
+  .arc-result-link:hover { text-decoration: underline; }
+  .arc-result-meta { display: flex; gap: 0.6rem; margin-top: 0.3rem; }
+  .arc-result-cat {
+    font-size: 0.7rem; color: #fff; padding: 0.1rem 0.5rem;
+    border-radius: 999px; background: #4a6fa5;
+  }
+  .arc-result-date { font-size: 0.7rem; color: #8a8a8e; }"""
 
 
 # ── JavaScript ────────────────────────────────────────────────────────────────
@@ -943,6 +1053,172 @@ _JS = """\
       });
       await _loadMgrCats();
     } catch(e) { showError('Failed to add category.'); }
+  }
+
+  // ── Archive modal ─────────────────────────────────────────────────────────
+  var _arcStack = [];   // navigation stack: [{type:'root'}, {type:'tree', category, node, path:[]}]
+
+  function openArchive() {
+    document.getElementById('archive-overlay').hidden = false;
+    switchTab('explore');
+    _arcStack = [];
+    _arcShowRoot();
+  }
+
+  function closeArchive() {
+    document.getElementById('archive-overlay').hidden = true;
+  }
+
+  document.addEventListener('click', function(e) {
+    const ov = document.getElementById('archive-overlay');
+    if (ov && e.target === ov) closeArchive();
+  });
+
+  function switchTab(name) {
+    document.getElementById('tab-explore').classList.toggle('active', name === 'explore');
+    document.getElementById('tab-search').classList.toggle('active', name === 'search');
+    document.getElementById('panel-explore').classList.toggle('active', name === 'explore');
+    document.getElementById('panel-search').classList.toggle('active', name === 'search');
+    if (name === 'search') document.getElementById('arc-search-input').focus();
+  }
+
+  async function _arcShowRoot() {
+    const el = document.getElementById('explore-content');
+    el.innerHTML = '<div class="arc-loading">Loading\u2026</div>';
+    try {
+      const cats = await fetch('/api/archive/categories').then(r => r.json());
+      if (!cats.length) {
+        el.innerHTML = '<div class="arc-empty">No articles in archive yet.<br>Run an Update Feed first.</div>';
+        return;
+      }
+      let html = '<ul class="arc-cat-list">';
+      cats.forEach(function(c) {
+        html += '<li class="arc-cat-item" data-cat="'+_esc(c.name)+'">'
+          + '<span class="arc-cat-name">'+_esc(c.name)+'</span>'
+          + '<span class="arc-cat-count">'+c.count+' article'+(c.count===1?'':'s')+'</span>'
+          + '</li>';
+      });
+      html += '</ul>';
+      el.innerHTML = html;
+      el.querySelectorAll('.arc-cat-item').forEach(function(item) {
+        item.addEventListener('click', function() {
+          _arcOpenCategory(item.dataset.cat);
+        });
+      });
+    } catch(e) {
+      el.innerHTML = '<div class="arc-empty">Failed to load archive.</div>';
+    }
+  }
+
+  async function _arcOpenCategory(category) {
+    const el = document.getElementById('explore-content');
+    el.innerHTML = '<div class="arc-loading">Building tree\u2026 this may take a moment the first time.</div>';
+    try {
+      const tree = await fetch('/api/archive/tree/'+encodeURIComponent(category)).then(r => r.json());
+      if (tree.error) throw new Error(tree.error);
+      _arcStack = [{type:'root'}];
+      _arcRenderNode(tree, [{label: category, node: tree}]);
+    } catch(e) {
+      document.getElementById('explore-content').innerHTML =
+        '<div class="arc-empty">Failed to load tree: '+_esc(e.message)+'</div>';
+    }
+  }
+
+  function _arcCountLeaves(node) {
+    if (node.articles) return node.articles.length;
+    if (node.children) return node.children.reduce(function(s,c){ return s + _arcCountLeaves(c); }, 0);
+    return 0;
+  }
+
+  function _arcRenderNode(node, breadcrumb) {
+    const el = document.getElementById('explore-content');
+    let html = '<div class="arc-breadcrumb">';
+    breadcrumb.forEach(function(crumb, i) {
+      if (i > 0) html += '<span class="arc-breadcrumb-sep">›</span>';
+      if (i < breadcrumb.length - 1) {
+        html += '<span class="arc-breadcrumb-item" data-depth="'+i+'">'+_esc(crumb.label)+'</span>';
+      } else {
+        html += '<span>'+_esc(crumb.label)+'</span>';
+      }
+    });
+    html += '</div>';
+
+    if (node.children && node.children.length) {
+      html += '<ul class="arc-node-list">';
+      node.children.forEach(function(child, i) {
+        const count = _arcCountLeaves(child);
+        html += '<li class="arc-node-item" data-child="'+i+'">'
+          + '<div class="arc-node-label">'+_esc(child.label)+'</div>'
+          + '<div class="arc-node-count">'+count+' article'+(count===1?'':'s')+'</div>'
+          + '</li>';
+      });
+      html += '</ul>';
+    } else if (node.articles && node.articles.length) {
+      node.articles.forEach(function(a) {
+        html += '<a class="arc-article-item" href="'+_esc(a.link)+'" target="_blank" rel="noopener noreferrer">'
+          + '<span class="arc-article-title">'+_esc(a.title)+'</span>'
+          + '<span class="arc-article-ext">&#8599;</span>'
+          + '</a>';
+      });
+    } else {
+      html += '<div class="arc-empty">No articles here.</div>';
+    }
+
+    el.innerHTML = html;
+
+    // Breadcrumb navigation
+    el.querySelectorAll('.arc-breadcrumb-item').forEach(function(item) {
+      item.addEventListener('click', function() {
+        const depth = parseInt(item.dataset.depth, 10);
+        const crumb = breadcrumb[depth];
+        _arcRenderNode(crumb.node, breadcrumb.slice(0, depth + 1));
+      });
+    });
+
+    // Child node navigation
+    el.querySelectorAll('.arc-node-item').forEach(function(item) {
+      item.addEventListener('click', function() {
+        const child = node.children[parseInt(item.dataset.child, 10)];
+        _arcRenderNode(child, breadcrumb.concat([{label: child.label, node: child}]));
+      });
+    });
+  }
+
+  // Search
+  document.addEventListener('keydown', function(e) {
+    if (e.key !== 'Enter') return;
+    if (e.target.id === 'arc-search-input') arcDoSearch();
+  });
+
+  async function arcDoSearch() {
+    const q = document.getElementById('arc-search-input').value.trim();
+    const el = document.getElementById('arc-search-results');
+    if (!q) return;
+    el.innerHTML = '<div class="arc-loading">Searching\u2026</div>';
+    try {
+      const results = await fetch('/api/archive/search?q='+encodeURIComponent(q)).then(r => r.json());
+      if (!results.length) {
+        el.innerHTML = '<div class="arc-empty">No results found.</div>';
+        return;
+      }
+      let html = '';
+      results.forEach(function(r) {
+        const date = r.fetched_at ? r.fetched_at.slice(0,10) : '';
+        html += '<div class="arc-result-item">'
+          + '<div class="arc-result-header">'
+          + '<span class="arc-result-title">'+_esc(r.title)+'</span>'
+          + (r.link ? '<a class="arc-result-link" href="'+_esc(r.link)+'" target="_blank" rel="noopener noreferrer">Open &#8599;</a>' : '')
+          + '</div>'
+          + '<div class="arc-result-meta">'
+          + '<span class="arc-result-cat">'+_esc(r.category)+'</span>'
+          + (date ? '<span class="arc-result-date">'+date+'</span>' : '')
+          + '</div>'
+          + '</div>';
+      });
+      el.innerHTML = html;
+    } catch(e) {
+      el.innerHTML = '<div class="arc-empty">Search failed.</div>';
+    }
   }"""
 
 
@@ -997,6 +1273,10 @@ __CSS__
             <button id="save-settings-btn" class="save-btn" onclick="saveSettings()">Save</button>
           </div>
         </div>
+        <button id="archive-btn" onclick="openArchive()">
+          <span class="btn-icon">&#128269;</span>
+          <span>Archive</span>
+        </button>
         <button id="manage-btn" onclick="openManage()">
           <span class="btn-icon">&#9776;</span>
           <span>Categories</span>
@@ -1021,6 +1301,29 @@ __SECTIONS__
       <button class="modal-close" onclick="closeManage()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body" id="manage-body"></div>
+  </div>
+</div>
+
+<div id="archive-overlay" class="modal-overlay" hidden>
+  <div class="archive-modal">
+    <div class="modal-header">
+      <span class="modal-title">Archive</span>
+      <button class="modal-close" onclick="closeArchive()" aria-label="Close">&times;</button>
+    </div>
+    <div class="archive-tabs">
+      <button class="archive-tab active" id="tab-explore" onclick="switchTab('explore')">Explore</button>
+      <button class="archive-tab" id="tab-search" onclick="switchTab('search')">Search</button>
+    </div>
+    <div class="archive-tab-panel active" id="panel-explore">
+      <div id="explore-content"></div>
+    </div>
+    <div class="archive-tab-panel" id="panel-search">
+      <div class="arc-search-row">
+        <input class="arc-search-input" id="arc-search-input" type="text" placeholder="I remember reading about\u2026">
+        <button class="arc-search-btn" onclick="arcDoSearch()">Search</button>
+      </div>
+      <div id="arc-search-results"></div>
+    </div>
   </div>
 </div>
 

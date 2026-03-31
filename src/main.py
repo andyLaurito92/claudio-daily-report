@@ -17,6 +17,7 @@ except ImportError:
 
 from fetcher import fetch_category, load_seen_ids, save_seen_ids
 from renderer import render_report
+from store import save_articles, prune
 from summarizer import summarize_category, word_budget
 
 
@@ -39,6 +40,12 @@ def main() -> None:
     seen_ids = load_seen_ids(data_dir)
     new_ids: set[str] = set()
 
+    # Prune articles older than the rolling window
+    window_days = config.get("archive", {}).get("window_days", 15)
+    pruned = prune(window_days)
+    if pruned:
+        print(f"[claudio] Pruned {pruned} article(s) older than {window_days} days from archive")
+
     print(f"[claudio] Reading time: {reading_time}m | Categories: {len(categories_cfg)}")
 
     summaries: list[dict] = []
@@ -53,6 +60,11 @@ def main() -> None:
         print(f"[claudio] Fetching '{name}' ({pct}%, ~{budget} words) …")
         articles = fetch_category(cat, seen_ids)
         print(f"          {len(articles)} new article(s) found")
+
+        # Persist raw articles for archive/search
+        saved = save_articles(articles, name)
+        if saved:
+            print(f"          {saved} article(s) saved to archive")
 
         print(f"[claudio] Summarising '{name}' …")
         summary_md = summarize_category(name, description, articles, budget)

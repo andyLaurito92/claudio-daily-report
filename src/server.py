@@ -24,6 +24,8 @@ import re as _re  # noqa: E402
 
 from main import main as run_pipeline  # noqa: E402
 from renderer import render_empty_state, _render  # noqa: E402
+import store  # noqa: E402
+import tree_builder  # noqa: E402
 
 app = Flask(__name__)
 
@@ -276,6 +278,95 @@ def api_delete_source(idx, sidx):
         sources.pop(sidx)
     _save_config(cfg)
     return jsonify({"ok": True})
+
+
+# ── Archive / Search API ──────────────────────────────────────────────────────
+
+@app.route("/api/archive/categories", methods=["GET"])
+def api_archive_categories():
+    """List categories that have archived articles, with counts."""
+    cfg = _load_config()
+    cats = cfg.get("categories", [])
+    result = []
+    for cat in cats:
+        name = cat["name"]
+        count = store.get_article_count(name)
+        result.append({"name": name, "count": count, "dirty": store.is_tree_dirty(name)})
+    return jsonify(result)
+
+
+@app.route("/api/archive/tree/<path:category>", methods=["GET"])
+def api_archive_tree(category):
+    """Return the cluster tree for a category, building it lazily if dirty."""
+    if store.is_tree_dirty(category):
+        try:
+            tree = tree_builder.build_tree(category)
+        except Exception as exc:
+            return jsonify({"error": str(exc)}), 500
+    else:
+        tree = store.get_tree(category)
+        if tree is None:
+            try:
+                tree = tree_builder.build_tree(category)
+            except Exception as exc:
+                return jsonify({"error": str(exc)}), 500
+    return jsonify(tree)
+
+
+@app.route("/api/archive/search", methods=["GET"])
+def api_archive_search():
+    """Full-text + semantic search over archived articles."""
+    q = (request.args.get("q") or "").strip()
+    if not q:
+        return jsonify([])
+
+    cfg = _load_config()
+    provider = cfg.get("llm", {}).get("provider", "anthropic")
+    base_url = cfg.get("llm", {}).get("ollama_base_url", "http://localhost:11434")
+
+    # Try semantic search first (requires embeddings)
+    try:
+        if provider == "ollama":
+            query_vec = tree_builder._embed_ollama([q], base_url)[0]
+        else:
+            query_vec = tree_builder._embed_anthropic([q])[0]
+
+        all_articles = store.get_all_embeddings_all_categories()
+        if all_articles:
+            import math
+            def cosine(a, b):
+                dot = sum(x * y for x, y in zip(a, b))
+                na = math.sqrt(sum(x * x for x in a)) or 1
+                nb = math.sqrt(sum(x * x for x in b)) or 1
+                return dot / (na * nb)
+
+            scored = [
+                {**a, "score": cosine(query_vec, a["embedding"])}
+                for a in all_articles
+            ]
+            scored.sort(key=lambda x: x["score"], reverse=True)
+            top = scored[:10]
+            return jsonify([
+                {"id": r["id"], "title": r["title"], "link": r["link"],
+                 "category": r["category"], "fetched_at": r["fetched_at"], "score": round(r["score"], 4)}
+                for r in top
+            ])
+    except Exception as exc:
+        print(f"[search] Semantic search failed, falling back to text search: {exc}")
+
+    # Fallback: simple title/content substring search
+    results = []
+    with store._connect() as conn:
+        rows = conn.execute(
+            """SELECT id, title, link, category, fetched_at FROM articles
+               WHERE title LIKE ? OR content LIKE ?
+               ORDER BY fetched_at DESC LIMIT 20""",
+            (f"%{q}%", f"%{q}%"),
+        ).fetchall()
+    for r in rows:
+        results.append({"id": r["id"], "title": r["title"], "link": r["link"],
+                        "category": r["category"], "fetched_at": r["fetched_at"], "score": None})
+    return jsonify(results)
 
 
 # ── Entry point ───────────────────────────────────────────────────────────────

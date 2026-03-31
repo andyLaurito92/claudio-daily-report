@@ -51,6 +51,8 @@ categories:
 output:
   dir: output
 data_dir: data
+archive:
+  window_days: 15
 llm:
   provider: ollama
   model: qwen2.5:3b
