@@ -8,44 +8,45 @@ import threading
 import urllib.request
 from pathlib import Path
 
-# Load .env before anything else
+sys.path.insert(0, os.path.dirname(__file__))
+
+from paths import CONFIG_FILE, OUTPUT_DIR, ENV_FILE, ensure_dirs  # noqa: E402
+
+# Load .env from user data dir
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 
-import yaml
-from flask import Flask, jsonify, request  # noqa: E402
-
-sys.path.insert(0, os.path.dirname(__file__))
-
 import re as _re  # noqa: E402
+import yaml  # noqa: E402
+from flask import Flask, jsonify, request  # noqa: E402
 
 from main import main as run_pipeline  # noqa: E402
 from renderer import render_empty_state, _render  # noqa: E402
 import store  # noqa: E402
 import tree_builder  # noqa: E402
 
+ensure_dirs()
 app = Flask(__name__)
 
 _lock = threading.Lock()
 _update_running = False
 _update_error: str | None = None
 
-_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
 _ANTHROPIC_MODELS = ["claude-opus-4-6", "claude-sonnet-4-6", "claude-haiku-4-5"]
 
 
 # ── Helpers ───────────────────────────────────────────────────────────────────
 
 def _load_config() -> dict:
-    with open(_CONFIG_PATH) as f:
+    with open(CONFIG_FILE) as f:
         return yaml.safe_load(f)
 
 
 def _save_config(cfg: dict) -> None:
-    with open(_CONFIG_PATH, "w") as f:
+    with open(CONFIG_FILE, "w") as f:
         yaml.dump(cfg, f, default_flow_style=False, allow_unicode=True, sort_keys=False)
 
 
@@ -126,7 +127,7 @@ def _rerender_html(html_content: str) -> str:
 @app.route("/")
 def index():
     # Prefer JSON summaries (saved by recent pipeline runs) for clean re-render
-    json_reports = sorted(glob.glob("output/*.json"))
+    json_reports = sorted(OUTPUT_DIR.glob("*.json"))
     if json_reports:
         with open(json_reports[-1], encoding="utf-8") as f:
             data = json.load(f)
@@ -144,7 +145,7 @@ def index():
             data["reading_time_minutes"],
         )
     # Fall back to re-rendering old HTML reports with the current UI template
-    html_reports = sorted(glob.glob("output/*.html"))
+    html_reports = sorted(OUTPUT_DIR.glob("*.html"))
     if not html_reports:
         return render_empty_state()
     with open(html_reports[-1], encoding="utf-8") as f:
@@ -278,6 +279,220 @@ def api_delete_source(idx, sidx):
         sources.pop(sidx)
     _save_config(cfg)
     return jsonify({"ok": True})
+
+
+# ── Setup API ─────────────────────────────────────────────────────────────────
+
+# ENV_FILE imported from paths above
+
+
+@app.route("/api/setup/key", methods=["POST"])
+def api_setup_key():
+    """Save an Anthropic API key to .env and verify it works."""
+    data = request.get_json(force=True)
+    key = (data.get("key") or "").strip()
+    if not key:
+        return jsonify({"ok": False, "error": "key required"}), 400
+
+    # Test the key before saving
+    try:
+        import anthropic
+        client = anthropic.Anthropic(api_key=key)
+        client.messages.create(
+            model="claude-haiku-4-5-20251001",
+            max_tokens=8,
+            messages=[{"role": "user", "content": "hi"}],
+        )
+    except Exception as exc:
+        return jsonify({"ok": False, "error": str(exc)})
+
+    # Write/update .env
+    env_content = ""
+    if ENV_FILE.exists():
+        lines = ENV_FILE.read_text(encoding="utf-8").splitlines()
+        lines = [l for l in lines if not l.startswith("ANTHROPIC_API_KEY=")]
+        env_content = "\n".join(lines) + "\n"
+    env_content += f"ANTHROPIC_API_KEY={key}\n"
+    ENV_FILE.write_text(env_content, encoding="utf-8")
+
+    # Apply immediately without restart
+    os.environ["ANTHROPIC_API_KEY"] = key
+
+    return jsonify({"ok": True})
+
+
+@app.route("/api/setup/test-ollama", methods=["GET"])
+def api_setup_test_ollama():
+    """Check that Ollama is running and required models are available."""
+    cfg = _load_config()
+    base_url = cfg.get("llm", {}).get("ollama_base_url", "http://localhost:11434")
+    try:
+        models = _get_ollama_models(base_url)
+        if not models:
+            return jsonify({"ok": False, "error": "Ollama is running but no models found. Run the download command first."})
+        required = ["qwen2.5:3b", "nomic-embed-text"]
+        missing = [m for m in required if not any(m in model for model in models)]
+        if missing:
+            return jsonify({"ok": False, "error": f"Missing models: {', '.join(missing)}. Run the download command to install them."})
+        return jsonify({"ok": True})
+    except Exception as exc:
+        return jsonify({"ok": False, "error": "Ollama is not running. Please open the Ollama app first."})
+
+
+# ── Source discovery API ──────────────────────────────────────────────────────
+
+def _find_rss_in_html(html: str, base_url: str) -> list[str]:
+    """Extract RSS/Atom feed URLs from an HTML page's <link> tags."""
+    import re
+    urls = []
+    for m in re.finditer(
+        r'<link[^>]+type=["\']application/(rss|atom)\+xml["\'][^>]*>',
+        html, re.IGNORECASE
+    ):
+        href = re.search(r'href=["\']([^"\']+)["\']', m.group(0))
+        if href:
+            url = href.group(1)
+            if url.startswith("//"):
+                url = "https:" + url
+            elif url.startswith("/"):
+                from urllib.parse import urlparse
+                p = urlparse(base_url)
+                url = f"{p.scheme}://{p.netloc}{url}"
+            urls.append(url)
+    return urls
+
+
+def _validate_feed(url: str) -> dict | None:
+    """Return {url, title} if the URL is a valid parseable feed, else None."""
+    try:
+        import feedparser
+        if not url.startswith(("http://", "https://")):
+            url = "https://" + url
+        feed = feedparser.parse(url)
+        if feed.bozo and not feed.entries:
+            return None
+        title = feed.feed.get("title") or feed.feed.get("subtitle") or url
+        return {"url": url, "title": str(title)[:80]}
+    except Exception:
+        return None
+
+
+def _discover_from_url(url: str) -> list[dict]:
+    """Fetch a webpage and find its RSS feeds."""
+    import urllib.request
+    if not url.startswith(("http://", "https://")):
+        url = "https://" + url
+    candidates = []
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
+        with urllib.request.urlopen(req, timeout=8) as resp:
+            html = resp.read().decode("utf-8", errors="ignore")
+        candidates.extend(_find_rss_in_html(html, url))
+    except Exception:
+        pass
+    # Try common feed paths if no links found
+    if not candidates:
+        from urllib.parse import urlparse
+        p = urlparse(url)
+        base = f"{p.scheme}://{p.netloc}"
+        candidates = [
+            base + "/feed", base + "/rss", base + "/feed.xml",
+            base + "/atom.xml", base + "/rss.xml", base + "/blog/feed",
+        ]
+    results = []
+    seen = set()
+    for c in candidates:
+        if c in seen:
+            continue
+        seen.add(c)
+        v = _validate_feed(c)
+        if v:
+            results.append(v)
+    return results[:8]
+
+
+def _discover_from_topic(query: str, category_name: str, category_desc: str) -> list[dict]:
+    """Ask the LLM to suggest RSS feed URLs for a topic, then validate them."""
+    cfg = _load_config()
+    provider = cfg.get("llm", {}).get("provider", "anthropic")
+    model = cfg.get("llm", {}).get("model", "claude-opus-4-6")
+    base_url = cfg.get("llm", {}).get("ollama_base_url", "http://localhost:11434")
+
+    system = (
+        "You suggest RSS feed URLs for a given topic. "
+        "Reply with a plain list of 5–8 real, working RSS feed URLs — one per line. "
+        "No explanations, no markdown, just URLs."
+    )
+    user = (
+        f"Category: {category_name}\n"
+        f"Description: {category_desc}\n"
+        f"User request: {query}\n\n"
+        "List RSS feed URLs for this topic:"
+    )
+
+    try:
+        if provider == "ollama":
+            from openai import OpenAI
+            client = OpenAI(base_url=base_url.rstrip("/") + "/v1", api_key="ollama")
+            resp = client.chat.completions.create(
+                model=model,
+                messages=[{"role": "system", "content": system}, {"role": "user", "content": user}],
+                max_tokens=256,
+            )
+            text = resp.choices[0].message.content or ""
+        else:
+            import anthropic
+            client = anthropic.Anthropic()
+            msg = client.messages.create(
+                model=model, max_tokens=256, system=system,
+                messages=[{"role": "user", "content": user}],
+            )
+            block = msg.content[0]
+            text = block.text if hasattr(block, "text") else ""
+    except Exception as exc:
+        print(f"[discover] LLM error: {exc}")
+        return []
+
+    import re
+    raw_urls = re.findall(r'https?://[^\s\'"<>]+', text)
+    results = []
+    seen = set()
+    for u in raw_urls:
+        u = u.rstrip(".,)")
+        if u in seen:
+            continue
+        seen.add(u)
+        v = _validate_feed(u)
+        if v:
+            results.append(v)
+    return results[:8]
+
+
+@app.route("/api/categories/<int:idx>/discover", methods=["POST"])
+def api_discover_sources(idx):
+    cfg = _load_config()
+    cats = cfg.get("categories", [])
+    if idx < 0 or idx >= len(cats):
+        return jsonify({"error": "not found"}), 404
+    data = request.get_json(force=True)
+    query = (data.get("query") or "").strip()
+    if not query:
+        return jsonify({"error": "query required"}), 400
+
+    cat = cats[idx]
+
+    # Detect if the query looks like a URL
+    import re
+    is_url = bool(re.match(r'^(https?://)?[A-Za-z0-9][-A-Za-z0-9.]+\.[A-Za-z]{2,}', query))
+    if is_url:
+        results = _discover_from_url(query)
+        # If URL discovery found nothing, fall back to topic search
+        if not results:
+            results = _discover_from_topic(query, cat["name"], cat.get("description", ""))
+    else:
+        results = _discover_from_topic(query, cat["name"], cat.get("description", ""))
+
+    return jsonify(results)
 
 
 # ── Archive / Search API ──────────────────────────────────────────────────────

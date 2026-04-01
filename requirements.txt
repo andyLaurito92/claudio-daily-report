@@ -5,3 +5,6 @@ markdown
 flask
 python-dotenv
 openai
+scipy
+pystray
+Pillow

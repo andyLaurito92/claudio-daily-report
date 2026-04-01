@@ -1,0 +1,90 @@
+name: Build installers
+
+on:
+  push:
+    tags:
+      - "v*"          # trigger on version tags: v0.1.0, v1.2.3, …
+  workflow_dispatch:  # allow manual trigger from GitHub UI
+
+permissions:
+  contents: write   # needed to create GitHub Releases
+
+jobs:
+  build:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest
+            artifact: Claudio-mac.zip
+            build_cmd: |
+              pyinstaller claudio.spec
+              cd dist
+              zip -r ../Claudio-mac.zip Claudio.app
+
+          - os: windows-latest
+            artifact: Claudio-windows.zip
+            build_cmd: |
+              pyinstaller claudio.spec
+              cd dist
+              Compress-Archive -Path Claudio -DestinationPath ../Claudio-windows.zip
+
+    runs-on: ${{ matrix.os }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pyinstaller
+
+      # scipy on macOS needs these system libs
+      - name: Install system deps (macOS)
+        if: runner.os == 'macOS'
+        run: brew install openblas
+
+      - name: Build with PyInstaller
+        shell: bash
+        run: ${{ matrix.build_cmd }}
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ${{ matrix.artifact }}
+          path: ${{ matrix.artifact }}
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/')
+
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/**/*.zip
+          body: |
+            ## Claudio ${{ github.ref_name }}
+
+            ### Install
+            1. Download the file for your platform below
+            2. **Mac**: unzip → double-click `Claudio.app`
+            3. **Windows**: unzip → double-click `Claudio.exe`
+
+            ### First run
+            Click the ⚙ icon in the app header and follow the **Setup guide** to configure your AI provider.
+
+            > Ollama users: install Ollama from [ollama.com](https://ollama.com/download) before launching.

@@ -14,14 +14,14 @@ from pathlib import Path
 import yaml
 
 import store
+from paths import CONFIG_FILE
 
-_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
 _EMBED_MODEL = "nomic-embed-text"
 _MIN_ARTICLES_FOR_SPLIT = 3   # clusters smaller than this stay as leaves
 
 
 def _llm_config() -> dict:
-    with open(_CONFIG_PATH) as f:
+    with open(CONFIG_FILE) as f:
         cfg = yaml.safe_load(f)
     return cfg.get("llm", {"provider": "anthropic", "model": "claude-opus-4-6"})
 

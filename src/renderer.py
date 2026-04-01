@@ -26,6 +26,9 @@ def _wrap_articles(html: str) -> str:
         html,
     )
 
+    # Strip <h4> tags that LLMs sometimes insert between <h3> and <p> (e.g. duplicate URL lines)
+    html = re.sub(r'<h4>[^<]*</h4>', '', html)
+
     # Step 2: wrap h3 + p(s) in .article
     wrapped = re.sub(
         r"(<h3>.*?</h3>)((?:\s*<p>.*?</p>)+)",
@@ -406,6 +409,80 @@ _CSS = """\
   .save-btn:hover:not(:disabled) { opacity: 0.82; }
   .save-btn:disabled { opacity: 0.45; cursor: default; }
   .save-btn.saved { background: #5e8a5e; }
+  .pop-setup-link {
+    display: block; text-align: center; margin-top: 0.65rem;
+    font-size: 0.75rem; color: #4a6fa5; cursor: pointer; text-decoration: none;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .pop-setup-link:hover { text-decoration: underline; }
+
+  /* ── Setup modal ── */
+  .setup-modal {
+    background: #fff; border-radius: 14px;
+    box-shadow: 0 20px 60px rgba(0,0,0,0.2);
+    width: 100%; max-width: 560px; max-height: 88vh;
+    display: flex; flex-direction: column;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .setup-tabs {
+    display: flex; border-bottom: 1px solid #e5e5ea; flex-shrink: 0; padding: 0 1.4rem;
+  }
+  .setup-tab {
+    padding: 0.75rem 1rem; font-size: 0.85rem; font-weight: 600;
+    color: #8a8a8e; border: none; background: none; cursor: pointer;
+    border-bottom: 2.5px solid transparent; margin-bottom: -1px;
+    transition: color 0.12s, border-color 0.12s;
+  }
+  .setup-tab.active { color: #4a6fa5; border-bottom-color: #4a6fa5; }
+  .setup-panel { display: none; flex: 1; overflow-y: auto; padding: 1.2rem 1.4rem; }
+  .setup-panel.active { display: block; }
+  .setup-step {
+    display: flex; gap: 0.85rem; margin-bottom: 1.1rem; align-items: flex-start;
+  }
+  .setup-step-num {
+    flex-shrink: 0; width: 24px; height: 24px; border-radius: 50%;
+    background: #4a6fa5; color: #fff; font-size: 0.75rem; font-weight: 700;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .setup-step-body { flex: 1; }
+  .setup-step-title { font-size: 0.88rem; font-weight: 600; color: #1c1c1e; margin-bottom: 0.2rem; }
+  .setup-step-desc { font-size: 0.8rem; color: #6b6b6b; line-height: 1.5; }
+  .setup-step-desc a { color: #4a6fa5; }
+  .setup-input-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; }
+  .setup-input {
+    flex: 1; padding: 0.4rem 0.7rem;
+    border: 1.5px solid #d1d1d6; border-radius: 7px;
+    font-size: 0.82rem; color: #1c1c1e; outline: none;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .setup-input:focus { border-color: #4a6fa5; }
+  .setup-test-btn {
+    padding: 0.4rem 0.9rem; background: #4a6fa5; color: #fff;
+    border: none; border-radius: 7px; font-size: 0.82rem; font-weight: 600;
+    cursor: pointer; white-space: nowrap; transition: opacity 0.12s;
+  }
+  .setup-test-btn:hover { opacity: 0.85; }
+  .setup-test-btn:disabled { opacity: 0.5; cursor: default; }
+  .setup-status {
+    margin-top: 0.5rem; font-size: 0.8rem; padding: 0.4rem 0.7rem;
+    border-radius: 7px; display: none;
+  }
+  .setup-status.ok { display: block; background: #f0faf0; color: #2d6a2d; }
+  .setup-status.err { display: block; background: #fff5f5; color: #b91c1c; }
+  .setup-code {
+    display: inline-flex; align-items: center; gap: 0.5rem;
+    background: #f0f0f5; border-radius: 6px; padding: 0.3rem 0.65rem;
+    font-family: 'SF Mono', 'Fira Code', monospace; font-size: 0.78rem;
+    color: #1c1c1e; margin-top: 0.35rem;
+  }
+  .setup-copy-btn {
+    background: none; border: none; cursor: pointer; color: #8a8a8e;
+    font-size: 0.75rem; padding: 0; transition: color 0.12s;
+  }
+  .setup-copy-btn:hover { color: #1c1c1e; }
+  .setup-divider {
+    border: none; border-top: 1px solid #f0f0f5; margin: 0.5rem 0 1rem;
+  }
 
   /* ── Article cards — full card clickable ── */
   .article { cursor: pointer; }
@@ -452,22 +529,43 @@ _CSS = """\
   .modal-close:hover { color: #1c1c1e; }
   .modal-body { overflow-y: auto; padding: 1rem 1.4rem; flex: 1; }
 
-  /* ── Category list items ── */
-  .cat-item {
-    border: 1.5px solid #e5e5ea; border-radius: 10px;
-    margin-bottom: 0.75rem; overflow: hidden;
-  }
-  .cat-header {
-    display: flex; align-items: center; gap: 0.6rem;
-    padding: 0.75rem 1rem; background: #fafafa;
-  }
+  /* ── Category list view ── */
   .cat-color-dot { width: 10px; height: 10px; border-radius: 50%; flex-shrink: 0; }
-  .cat-name { font-weight: 600; font-size: 0.9rem; color: #1c1c1e; flex: 1; }
-  .cat-weight-badge {
+  .cat-list-row {
+    display: flex; align-items: center; gap: 0.7rem;
+    padding: 0.8rem 1rem; border: 1.5px solid #e5e5ea; border-radius: 10px;
+    margin-bottom: 0.55rem; cursor: pointer;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .cat-list-row:hover { border-color: #4a6fa5; background: #f8f9ff; }
+  .cat-list-name { font-weight: 600; font-size: 0.9rem; color: #1c1c1e; flex: 1; }
+  .cat-list-meta { display: flex; gap: 0.4rem; align-items: center; }
+  .cat-list-badge {
+    font-size: 0.72rem; color: #6b6b6b; background: #e5e5ea;
+    padding: 0.15rem 0.5rem; border-radius: 999px; white-space: nowrap;
+  }
+  .cat-list-badge.zero { background: #fff0f0; color: #b91c1c; }
+  .cat-list-chevron { color: #aeaeb2; font-size: 0.8rem; }
+
+  /* ── Category detail view ── */
+  .cat-detail-back {
+    display: inline-flex; align-items: center; gap: 0.35rem;
+    background: none; border: none; cursor: pointer; color: #4a6fa5;
+    font-size: 0.82rem; font-weight: 500; padding: 0 0 0.75rem 0;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .cat-detail-back:hover { text-decoration: underline; }
+  .cat-detail-header {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding-bottom: 0.75rem; border-bottom: 1px solid #f0f0f5; margin-bottom: 0.85rem;
+  }
+  .cat-detail-name { font-weight: 700; font-size: 1rem; color: #1c1c1e; flex: 1; }
+  .cat-detail-badges { display: flex; gap: 0.4rem; }
+  .cat-detail-badge {
     font-size: 0.72rem; color: #6b6b6b; background: #e5e5ea;
     padding: 0.15rem 0.5rem; border-radius: 999px;
   }
-  .cat-actions { display: flex; gap: 0.3rem; margin-left: 0.3rem; }
+  .cat-detail-actions { display: flex; gap: 0.3rem; }
   .cat-action-btn {
     background: none; border: none; cursor: pointer; color: #8a8a8e;
     font-size: 0.85rem; padding: 0.25rem 0.4rem; border-radius: 5px;
@@ -475,13 +573,15 @@ _CSS = """\
   }
   .cat-action-btn:hover { background: #f0f0f5; color: #1c1c1e; }
   .cat-action-btn.delete:hover { background: #fff5f5; color: #b91c1c; }
-  .cat-body { padding: 0.65rem 1rem 0.75rem; border-top: 1px solid #f0f0f5; }
-  .cat-desc { font-size: 0.82rem; color: #6b6b6b; margin-bottom: 0.65rem; }
+  .cat-desc { font-size: 0.82rem; color: #6b6b6b; margin-bottom: 0.85rem; }
+  .cat-sources-label {
+    font-size: 0.7rem; font-weight: 700; color: #6b6b6b;
+    text-transform: uppercase; letter-spacing: 0.06em; margin-bottom: 0.4rem;
+  }
   .source-list { margin: 0; padding: 0; list-style: none; }
   .source-item {
     display: flex; align-items: center; gap: 0.5rem; padding: 0.3rem 0;
-    font-size: 0.78rem; color: #3a3a3c;
-    border-bottom: 1px solid #f5f5f7;
+    font-size: 0.78rem; color: #3a3a3c; border-bottom: 1px solid #f5f5f7;
   }
   .source-item:last-child { border-bottom: none; }
   .source-url {
@@ -494,7 +594,7 @@ _CSS = """\
     border-radius: 4px; transition: color 0.12s, background 0.12s;
   }
   .source-remove-btn:hover { color: #b91c1c; background: #fff5f5; }
-  .add-source-row { display: flex; gap: 0.5rem; margin-top: 0.5rem; align-items: center; }
+  .add-source-row { display: flex; gap: 0.5rem; margin-top: 0.65rem; align-items: center; }
   .add-source-input {
     flex: 1; padding: 0.3rem 0.6rem;
     border: 1.5px solid #d1d1d6; border-radius: 6px;
@@ -507,6 +607,61 @@ _CSS = """\
     cursor: pointer; white-space: nowrap; transition: opacity 0.12s;
   }
   .add-source-btn:hover { opacity: 0.8; }
+
+  /* ── Discover sources ── */
+  .discover-section { margin-top: 1.1rem; }
+  .discover-toggle-btn {
+    display: inline-flex; align-items: center; gap: 0.4rem;
+    background: none; border: 1.5px solid #d1d1d6; border-radius: 8px;
+    padding: 0.38rem 0.85rem; font-size: 0.82rem; font-weight: 500; color: #3a3a3c;
+    cursor: pointer; transition: border-color 0.15s, color 0.15s;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .discover-toggle-btn:hover { border-color: #4a6fa5; color: #4a6fa5; }
+  .discover-panel {
+    margin-top: 0.65rem; padding: 0.85rem 1rem;
+    border: 1.5px solid #d1d1d6; border-radius: 10px; background: #fafafa;
+  }
+  .discover-hint {
+    font-size: 0.78rem; color: #6b6b6b; margin-bottom: 0.55rem; line-height: 1.5;
+  }
+  .discover-input-row { display: flex; gap: 0.5rem; }
+  .discover-input {
+    flex: 1; padding: 0.4rem 0.7rem;
+    border: 1.5px solid #d1d1d6; border-radius: 7px;
+    font-size: 0.82rem; color: #1c1c1e; outline: none;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .discover-input:focus { border-color: #4a6fa5; }
+  .discover-find-btn {
+    padding: 0.4rem 0.9rem; background: #4a6fa5; color: #fff;
+    border: none; border-radius: 7px; font-size: 0.82rem; font-weight: 600;
+    cursor: pointer; white-space: nowrap; transition: opacity 0.12s;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .discover-find-btn:hover { opacity: 0.85; }
+  .discover-find-btn:disabled { opacity: 0.5; cursor: default; }
+  .discover-results { margin-top: 0.75rem; }
+  .discover-result-item {
+    display: flex; align-items: center; gap: 0.6rem;
+    padding: 0.45rem 0; border-bottom: 1px solid #f0f0f5;
+  }
+  .discover-result-item:last-child { border-bottom: none; }
+  .discover-result-check { flex-shrink: 0; accent-color: #4a6fa5; width: 15px; height: 15px; cursor: pointer; }
+  .discover-result-info { flex: 1; min-width: 0; }
+  .discover-result-title { font-size: 0.82rem; font-weight: 600; color: #1c1c1e; }
+  .discover-result-url {
+    font-size: 0.72rem; color: #8a8a8e; white-space: nowrap;
+    overflow: hidden; text-overflow: ellipsis;
+    font-family: 'SF Mono', 'Fira Code', monospace;
+  }
+  .discover-add-btn {
+    margin-top: 0.65rem; padding: 0.38rem 0.9rem; background: #1c1c1e; color: #fff;
+    border: none; border-radius: 7px; font-size: 0.8rem; font-weight: 600;
+    cursor: pointer; transition: opacity 0.12s;
+    font-family: -apple-system, BlinkMacSystemFont, sans-serif;
+  }
+  .discover-add-btn:hover { opacity: 0.8; }
 
   /* ── Edit / add category forms ── */
   .edit-form { padding: 0.75rem 1rem; background: #f8f8fa; }
@@ -869,16 +1024,6 @@ _JS = """\
   });
 
   // ── Manage categories modal ──────────────────────────────────────────────────
-  // Enter key on add-source inputs (delegated, avoids inline string escaping)
-  document.addEventListener('keydown', function(e) {
-    if (e.key !== 'Enter') return;
-    var inp = e.target;
-    if (!inp.classList.contains('add-source-input')) return;
-    var row = inp.closest('.cat-item');
-    if (!row) return;
-    _mgrAddSrc(parseInt(row.dataset.idx, 10));
-  });
-
   const _MGR_PALETTE = ['#4a6fa5','#5e8a5e','#8b5e6b','#7a6e4b','#5e7a8b'];
   var _mgrCats = [];
 
@@ -912,6 +1057,7 @@ _JS = """\
     return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
   }
 
+  // ── List view ────────────────────────────────────────────────────────────────
   function _renderMgr() {
     const body = document.getElementById('manage-body');
     const total = _mgrCats.reduce(function(s,c){ return s + (c.weight||1); }, 0);
@@ -919,71 +1065,140 @@ _JS = """\
     _mgrCats.forEach(function(cat, i) {
       const pct = total > 0 ? Math.round((cat.weight||1) / total * 100) : 0;
       const color = _MGR_PALETTE[i % _MGR_PALETTE.length];
-      const sources = cat.sources || [];
-      html += '<div class="cat-item" data-idx="'+i+'">';
-      html += '<div class="cat-header">';
-      html += '<span class="cat-color-dot" style="background:'+color+'"></span>';
-      html += '<span class="cat-name">'+_esc(cat.name)+'</span>';
-      html += '<span class="cat-weight-badge">'+pct+'%\u00b7w'+_esc(cat.weight)+'</span>';
-      html += '<div class="cat-actions">';
-      html += '<button class="cat-action-btn" onclick="_mgrEditCat('+i+')" title="Edit">&#9998;</button>';
-      html += '<button class="cat-action-btn delete" onclick="_mgrDeleteCat('+i+')" title="Delete">&#215;</button>';
-      html += '</div>';
-      html += '</div>';
-      html += '<div class="cat-body">';
-      if (cat.description) html += '<div class="cat-desc">'+_esc(cat.description)+'</div>';
-      html += '<ul class="source-list">';
-      sources.forEach(function(src, si) {
-        html += '<li class="source-item">';
-        html += '<span class="source-url" title="'+_esc(src.url)+'">'+_esc(src.url)+'</span>';
-        html += '<button class="source-remove-btn" onclick="_mgrRemoveSrc('+i+','+si+')" title="Remove">&#x2715;</button>';
-        html += '</li>';
-      });
-      html += '</ul>';
-      html += '<div class="add-source-row">';
-      html += '<input class="add-source-input" id="src-in-'+i+'" type="url" placeholder="https://example.com/feed.rss">';
-      html += '<button class="add-source-btn" onclick="_mgrAddSrc('+i+')">Add RSS</button>';
-      html += '</div>';
-      html += '</div>';
-      html += '</div>';
+      const srcCount = (cat.sources || []).length;
+      const zeroClass = srcCount === 0 ? ' zero' : '';
+      html += '<div class="cat-list-row" data-idx="'+i+'">'
+        + '<span class="cat-color-dot" style="background:'+color+'"></span>'
+        + '<span class="cat-list-name">'+_esc(cat.name)+'</span>'
+        + '<span class="cat-list-meta">'
+        + '<span class="cat-list-badge">'+pct+'%</span>'
+        + '<span class="cat-list-badge'+zeroClass+'">'+srcCount+' feed'+(srcCount===1?'':'s')+'</span>'
+        + '</span>'
+        + '<span class="cat-list-chevron">&#8250;</span>'
+        + '</div>';
     });
-    html += '<div class="add-cat-section" id="add-cat-section">';
-    html += '<button class="add-cat-btn" onclick="_mgrShowAddForm()">+ Add Category</button>';
-    html += '</div>';
+    html += '<div class="add-cat-section" id="add-cat-section">'
+      + '<button class="add-cat-btn" id="add-cat-btn">+ Add Category</button>'
+      + '</div>';
     body.innerHTML = html;
+
+    body.querySelectorAll('.cat-list-row').forEach(function(row) {
+      row.addEventListener('click', function() {
+        _mgrShowDetail(parseInt(row.dataset.idx, 10));
+      });
+    });
+    document.getElementById('add-cat-btn').addEventListener('click', _mgrShowAddForm);
   }
 
+  // ── Detail view ──────────────────────────────────────────────────────────────
+  function _mgrShowDetail(idx) {
+    const cat = _mgrCats[idx];
+    const total = _mgrCats.reduce(function(s,c){ return s + (c.weight||1); }, 0);
+    const pct = total > 0 ? Math.round((cat.weight||1) / total * 100) : 0;
+    const color = _MGR_PALETTE[idx % _MGR_PALETTE.length];
+    const sources = cat.sources || [];
+    const body = document.getElementById('manage-body');
+
+    var html = '<button class="cat-detail-back" id="det-back">&#8592; All categories</button>'
+      + '<div class="cat-detail-header">'
+      + '<span class="cat-color-dot" style="background:'+color+'"></span>'
+      + '<span class="cat-detail-name">'+_esc(cat.name)+'</span>'
+      + '<span class="cat-detail-badges">'
+      + '<span class="cat-detail-badge">'+pct+'%</span>'
+      + '<span class="cat-detail-badge">w'+_esc(cat.weight)+'</span>'
+      + '</span>'
+      + '<div class="cat-detail-actions">'
+      + '<button class="cat-action-btn" id="det-edit" title="Edit">&#9998;</button>'
+      + '<button class="cat-action-btn delete" id="det-del" title="Delete">&#215;</button>'
+      + '</div>'
+      + '</div>';
+
+    if (cat.description) html += '<div class="cat-desc">'+_esc(cat.description)+'</div>';
+
+    html += '<div class="cat-sources-label">Sources ('+sources.length+')</div>'
+      + '<ul class="source-list" id="det-source-list">';
+    sources.forEach(function(src, si) {
+      html += '<li class="source-item">'
+        + '<span class="source-url" title="'+_esc(src.url)+'">'+_esc(src.url)+'</span>'
+        + '<button class="source-remove-btn" data-si="'+si+'" title="Remove">&#x2715;</button>'
+        + '</li>';
+    });
+    html += '</ul>'
+      + '<div class="add-source-row">'
+      + '<input class="add-source-input" id="det-src-in" type="url" placeholder="https://example.com/feed.rss">'
+      + '<button class="add-source-btn" id="det-src-add">Add RSS</button>'
+      + '</div>'
+      + '<div class="discover-section">'
+      + '<button class="discover-toggle-btn" id="det-discover-btn">&#128269; Discover sources</button>'
+      + '<div id="det-discover-panel" hidden>'
+      + '<div class="discover-panel">'
+      + '<div class="discover-hint">Describe what you want to read, or paste a website you already visit:</div>'
+      + '<div class="discover-input-row">'
+      + '<input class="discover-input" id="det-discover-in" placeholder="e.g. Formula 1 news, or https://marca.com">'
+      + '<button class="discover-find-btn" id="det-discover-find">Find sources</button>'
+      + '</div>'
+      + '<div id="det-discover-results"></div>'
+      + '</div>'
+      + '</div>'
+      + '</div>';
+
+    body.innerHTML = html;
+
+    document.getElementById('det-back').addEventListener('click', _loadMgrCats);
+    document.getElementById('det-edit').addEventListener('click', function() { _mgrEditCat(idx); });
+    document.getElementById('det-del').addEventListener('click', function() { _mgrDeleteCat(idx); });
+    document.getElementById('det-src-add').addEventListener('click', function() { _mgrAddSrc(idx); });
+    document.getElementById('det-src-in').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') _mgrAddSrc(idx);
+    });
+    document.getElementById('det-source-list').querySelectorAll('.source-remove-btn').forEach(function(btn) {
+      btn.addEventListener('click', function() { _mgrRemoveSrc(idx, parseInt(btn.dataset.si, 10)); });
+    });
+    document.getElementById('det-discover-btn').addEventListener('click', function() {
+      const panel = document.getElementById('det-discover-panel');
+      panel.hidden = !panel.hidden;
+      if (!panel.hidden) document.getElementById('det-discover-in').focus();
+    });
+    document.getElementById('det-discover-find').addEventListener('click', function() { _mgrDiscover(idx); });
+    document.getElementById('det-discover-in').addEventListener('keydown', function(e) {
+      if (e.key === 'Enter') _mgrDiscover(idx);
+    });
+  }
+
+  // ── Edit / delete / sources ───────────────────────────────────────────────────
   function _mgrEditCat(idx) {
     const cat = _mgrCats[idx];
-    const item = document.querySelector('.cat-item[data-idx="'+idx+'"]');
-    if (!item) return;
-    item.innerHTML = '<div class="edit-form">'
+    const body = document.getElementById('manage-body');
+    body.innerHTML = '<button class="cat-detail-back" id="edit-back">&#8592; Back</button>'
+      + '<div class="edit-form" style="margin-top:0.5rem">'
       + '<div class="edit-row">'
       + '<div class="edit-field"><label class="edit-label">Name</label>'
-      + '<input class="edit-input" id="ed-name-'+idx+'" value="'+_esc(cat.name)+'"></div>'
+      + '<input class="edit-input" id="ed-name" value="'+_esc(cat.name)+'"></div>'
       + '<div class="edit-field weight-field"><label class="edit-label">Weight</label>'
-      + '<input class="edit-input" id="ed-wt-'+idx+'" type="number" min="1" value="'+_esc(cat.weight)+'"></div>'
+      + '<input class="edit-input" id="ed-wt" type="number" min="1" value="'+_esc(cat.weight)+'"></div>'
       + '</div>'
       + '<div class="edit-row">'
       + '<div class="edit-field"><label class="edit-label">Description</label>'
-      + '<input class="edit-input" id="ed-desc-'+idx+'" value="'+_esc(cat.description||'')+'"></div>'
+      + '<input class="edit-input" id="ed-desc" value="'+_esc(cat.description||'')+'"></div>'
       + '</div>'
       + '<div class="edit-actions">'
-      + '<button class="edit-cancel-btn" onclick="_loadMgrCats()">Cancel</button>'
-      + '<button class="edit-save-btn" onclick="_mgrSaveCat('+idx+')">Save</button>'
+      + '<button class="edit-cancel-btn" id="ed-cancel">Cancel</button>'
+      + '<button class="edit-save-btn" id="ed-save">Save</button>'
       + '</div></div>';
-    document.getElementById('ed-name-'+idx).focus();
+    document.getElementById('edit-back').addEventListener('click', function() { _mgrShowDetail(idx); });
+    document.getElementById('ed-cancel').addEventListener('click', function() { _mgrShowDetail(idx); });
+    document.getElementById('ed-save').addEventListener('click', function() { _mgrSaveCat(idx); });
+    document.getElementById('ed-name').focus();
   }
 
   async function _mgrSaveCat(idx) {
-    const name = document.getElementById('ed-name-'+idx).value.trim();
-    const weight = parseInt(document.getElementById('ed-wt-'+idx).value) || 1;
-    const description = document.getElementById('ed-desc-'+idx).value.trim();
-    if (!name) { document.getElementById('ed-name-'+idx).focus(); return; }
+    const name = document.getElementById('ed-name').value.trim();
+    const weight = parseInt(document.getElementById('ed-wt').value) || 1;
+    const description = document.getElementById('ed-desc').value.trim();
+    if (!name) { document.getElementById('ed-name').focus(); return; }
     try {
       await fetch('/api/categories/'+idx, {
-        method: 'PUT',
-        headers: {'Content-Type':'application/json'},
+        method: 'PUT', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({name, weight, description}),
       });
       await _loadMgrCats();
@@ -992,7 +1207,7 @@ _JS = """\
 
   async function _mgrDeleteCat(idx) {
     const cat = _mgrCats[idx];
-    if (!confirm('Delete category "'+cat.name+'"? This cannot be undone.')) return;
+    if (!confirm('Delete "'+cat.name+'"? This cannot be undone.')) return;
     try {
       await fetch('/api/categories/'+idx, {method:'DELETE'});
       await _loadMgrCats();
@@ -1000,26 +1215,83 @@ _JS = """\
   }
 
   async function _mgrAddSrc(idx) {
-    const input = document.getElementById('src-in-'+idx);
-    const url = input.value.trim();
-    if (!url) { input.focus(); return; }
+    const input = document.getElementById('det-src-in');
+    const url = (input ? input.value : '').trim();
+    if (!url) { if (input) input.focus(); return; }
     try {
       await fetch('/api/categories/'+idx+'/sources', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({url, type:'rss'}),
       });
-      await _loadMgrCats();
+      _mgrCats = await fetch('/api/categories').then(r => r.json());
+      _mgrShowDetail(idx);
     } catch(e) { showError('Failed to add source.'); }
   }
 
   async function _mgrRemoveSrc(idx, srcIdx) {
     try {
       await fetch('/api/categories/'+idx+'/sources/'+srcIdx, {method:'DELETE'});
-      await _loadMgrCats();
+      _mgrCats = await fetch('/api/categories').then(r => r.json());
+      _mgrShowDetail(idx);
     } catch(e) { showError('Failed to remove source.'); }
   }
 
+  // ── Discover sources ──────────────────────────────────────────────────────────
+  async function _mgrDiscover(idx) {
+    const input = document.getElementById('det-discover-in');
+    const q = input.value.trim();
+    if (!q) { input.focus(); return; }
+    const btn = document.getElementById('det-discover-find');
+    const resultsEl = document.getElementById('det-discover-results');
+    btn.disabled = true;
+    btn.textContent = 'Searching\u2026';
+    resultsEl.innerHTML = '';
+    try {
+      const res = await fetch('/api/categories/'+idx+'/discover', {
+        method: 'POST', headers: {'Content-Type':'application/json'},
+        body: JSON.stringify({query: q}),
+      });
+      const feeds = await res.json();
+      btn.disabled = false;
+      btn.textContent = 'Find sources';
+      if (feeds.error) { resultsEl.innerHTML = '<div style="color:#b91c1c;font-size:0.8rem;margin-top:0.5rem">'+_esc(feeds.error)+'</div>'; return; }
+      if (!feeds.length) { resultsEl.innerHTML = '<div style="color:#8a8a8e;font-size:0.8rem;margin-top:0.5rem">No feeds found. Try a different description or URL.</div>'; return; }
+      var html = '<div class="discover-results" id="disc-list">';
+      feeds.forEach(function(f, fi) {
+        html += '<div class="discover-result-item">'
+          + '<input type="checkbox" class="discover-result-check" id="disc-cb-'+fi+'" data-url="'+_esc(f.url)+'" checked>'
+          + '<label class="discover-result-info" for="disc-cb-'+fi+'">'
+          + '<div class="discover-result-title">'+_esc(f.title)+'</div>'
+          + '<div class="discover-result-url">'+_esc(f.url)+'</div>'
+          + '</label></div>';
+      });
+      html += '</div><button class="discover-add-btn" id="disc-add-btn">Add selected</button>';
+      resultsEl.innerHTML = html;
+      document.getElementById('disc-add-btn').addEventListener('click', function() { _mgrAddDiscovered(idx); });
+    } catch(e) {
+      btn.disabled = false;
+      btn.textContent = 'Find sources';
+      resultsEl.innerHTML = '<div style="color:#b91c1c;font-size:0.8rem;margin-top:0.5rem">Search failed.</div>';
+    }
+  }
+
+  async function _mgrAddDiscovered(idx) {
+    const checked = document.querySelectorAll('#disc-list .discover-result-check:checked');
+    const urls = Array.from(checked).map(function(cb) { return cb.dataset.url; });
+    if (!urls.length) return;
+    try {
+      for (const url of urls) {
+        await fetch('/api/categories/'+idx+'/sources', {
+          method: 'POST', headers: {'Content-Type':'application/json'},
+          body: JSON.stringify({url, type:'rss'}),
+        });
+      }
+      _mgrCats = await fetch('/api/categories').then(r => r.json());
+      _mgrShowDetail(idx);
+    } catch(e) { showError('Failed to add sources.'); }
+  }
+
+  // ── Add new category form ─────────────────────────────────────────────────────
   function _mgrShowAddForm() {
     document.getElementById('add-cat-section').innerHTML = '<div class="add-cat-form">'
       + '<div class="add-cat-form-title">New Category</div>'
@@ -1034,10 +1306,12 @@ _JS = """\
       + '<input class="edit-input" id="nc-desc" placeholder="Topic focus\u2026"></div>'
       + '</div>'
       + '<div class="edit-actions">'
-      + '<button class="edit-cancel-btn" onclick="_renderMgr()">Cancel</button>'
-      + '<button class="edit-save-btn" onclick="_mgrSaveNew()">Add</button>'
+      + '<button class="edit-cancel-btn" id="nc-cancel">Cancel</button>'
+      + '<button class="edit-save-btn" id="nc-save">Add</button>'
       + '</div></div>';
     document.getElementById('nc-name').focus();
+    document.getElementById('nc-cancel').addEventListener('click', _renderMgr);
+    document.getElementById('nc-save').addEventListener('click', _mgrSaveNew);
   }
 
   async function _mgrSaveNew() {
@@ -1047,12 +1321,94 @@ _JS = """\
     if (!name) { document.getElementById('nc-name').focus(); return; }
     try {
       await fetch('/api/categories', {
-        method: 'POST',
-        headers: {'Content-Type':'application/json'},
+        method: 'POST', headers: {'Content-Type':'application/json'},
         body: JSON.stringify({name, weight, description}),
       });
       await _loadMgrCats();
     } catch(e) { showError('Failed to add category.'); }
+  }
+
+  // ── Setup guide modal ────────────────────────────────────────────────────
+  function openSetup() {
+    document.getElementById('settings-popover').hidden = true;
+    document.getElementById('settings-btn').classList.remove('active');
+    document.getElementById('setup-overlay').hidden = false;
+  }
+
+  function closeSetup() {
+    document.getElementById('setup-overlay').hidden = true;
+  }
+
+  document.addEventListener('click', function(e) {
+    const ov = document.getElementById('setup-overlay');
+    if (ov && e.target === ov) closeSetup();
+  });
+
+  function switchSetupTab(name) {
+    document.getElementById('setup-tab-anthropic').classList.toggle('active', name === 'anthropic');
+    document.getElementById('setup-tab-ollama').classList.toggle('active', name === 'ollama');
+    document.getElementById('setup-panel-anthropic').classList.toggle('active', name === 'anthropic');
+    document.getElementById('setup-panel-ollama').classList.toggle('active', name === 'ollama');
+  }
+
+  async function setupTestAnthropic() {
+    const key = document.getElementById('setup-api-key').value.trim();
+    const status = document.getElementById('setup-anthropic-status');
+    const btn = document.getElementById('setup-test-anthropic');
+    if (!key) { document.getElementById('setup-api-key').focus(); return; }
+    btn.disabled = true; btn.textContent = 'Testing\u2026';
+    status.className = 'setup-status'; status.style.display = 'none';
+    try {
+      const res = await fetch('/api/setup/key', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({key}),
+      });
+      const data = await res.json();
+      if (data.ok) {
+        status.className = 'setup-status ok';
+        status.textContent = '\u2713 Connected! Your API key is saved. You can close this guide.';
+      } else {
+        status.className = 'setup-status err';
+        status.textContent = '\u2717 ' + (data.error || 'Connection failed. Check your key and try again.');
+      }
+    } catch(e) {
+      status.className = 'setup-status err';
+      status.textContent = '\u2717 Could not reach the server.';
+    }
+    btn.disabled = false; btn.textContent = 'Save & Test';
+  }
+
+  async function setupTestOllama() {
+    const status = document.getElementById('setup-ollama-status');
+    const btn = document.getElementById('setup-test-ollama');
+    btn.disabled = true; btn.textContent = 'Checking\u2026';
+    status.className = 'setup-status'; status.style.display = 'none';
+    try {
+      const res = await fetch('/api/setup/test-ollama');
+      const data = await res.json();
+      if (data.ok) {
+        status.className = 'setup-status ok';
+        status.textContent = '\u2713 Ollama is running and the models are ready. You can close this guide.';
+      } else {
+        status.className = 'setup-status err';
+        status.textContent = '\u2717 ' + (data.error || 'Ollama not detected. Make sure it is running and the models are downloaded.');
+      }
+    } catch(e) {
+      status.className = 'setup-status err';
+      status.textContent = '\u2717 Could not reach the server.';
+    }
+    btn.disabled = false; btn.textContent = 'Check connection';
+  }
+
+  function setupCopyCmd() {
+    const cmd = 'ollama pull qwen2.5:3b && ollama pull nomic-embed-text';
+    navigator.clipboard.writeText(cmd).then(function() {
+      const btn = document.querySelector('.setup-copy-btn');
+      const orig = btn.innerHTML;
+      btn.textContent = '\u2713';
+      setTimeout(function() { btn.innerHTML = orig; }, 1500);
+    });
   }
 
   // ── Archive modal ─────────────────────────────────────────────────────────
@@ -1274,6 +1630,7 @@ __CSS__
               <select id="model-select" class="model-select"></select>
             </div>
             <button id="save-settings-btn" class="save-btn" onclick="saveSettings()">Save</button>
+            <a class="pop-setup-link" onclick="openSetup()">First time? Setup guide &rarr;</a>
           </div>
         </div>
         <button id="archive-btn" onclick="openArchive()">
@@ -1304,6 +1661,100 @@ __SECTIONS__
       <button class="modal-close" onclick="closeManage()" aria-label="Close">&times;</button>
     </div>
     <div class="modal-body" id="manage-body"></div>
+  </div>
+</div>
+
+<div id="setup-overlay" class="modal-overlay" hidden>
+  <div class="setup-modal">
+    <div class="modal-header">
+      <span class="modal-title">Setup Guide</span>
+      <button class="modal-close" onclick="closeSetup()" aria-label="Close">&times;</button>
+    </div>
+    <div class="setup-tabs">
+      <button class="setup-tab active" id="setup-tab-anthropic" onclick="switchSetupTab('anthropic')">Anthropic API</button>
+      <button class="setup-tab" id="setup-tab-ollama" onclick="switchSetupTab('ollama')">Local (Ollama)</button>
+    </div>
+
+    <div class="setup-panel active" id="setup-panel-anthropic">
+      <div class="setup-step">
+        <div class="setup-step-num">1</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Create an Anthropic account</div>
+          <div class="setup-step-desc">Go to <a href="https://console.anthropic.com" target="_blank" rel="noopener">console.anthropic.com</a> and sign up for free. New accounts get free credits to get started.</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num">2</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Create an API key</div>
+          <div class="setup-step-desc">Once logged in, click <strong>API Keys</strong> in the left sidebar, then click <strong>Create Key</strong>. Give it any name (e.g. "claudio").</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num">3</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Paste your key below</div>
+          <div class="setup-step-desc">Copy the key (starts with <code>sk-ant-</code>) and paste it here. It will be saved locally on your computer only.</div>
+          <div class="setup-input-row">
+            <input class="setup-input" id="setup-api-key" type="password" placeholder="sk-ant-api03-\u2026">
+            <button class="setup-test-btn" id="setup-test-anthropic" onclick="setupTestAnthropic()">Save &amp; Test</button>
+          </div>
+          <div class="setup-status" id="setup-anthropic-status"></div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num">4</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Select your model</div>
+          <div class="setup-step-desc">Close this guide, click the &#9881; settings icon, choose <strong>Anthropic</strong> as provider and pick a model. <strong>claude-sonnet-4-6</strong> is a good balance of speed and quality.</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="setup-panel" id="setup-panel-ollama">
+      <div class="setup-step">
+        <div class="setup-step-num">1</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Download Ollama</div>
+          <div class="setup-step-desc">Go to <a href="https://ollama.com/download" target="_blank" rel="noopener">ollama.com/download</a> and download the installer for your system (Mac or Windows).</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num">2</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Install and launch it</div>
+          <div class="setup-step-desc"><strong>Mac:</strong> open the downloaded file and drag Ollama to Applications, then open it.<br><strong>Windows:</strong> run the installer. Ollama will appear in your system tray when running.</div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num">3</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Download the AI model</div>
+          <div class="setup-step-desc">Open a Terminal (Mac) or Command Prompt (Windows) and run this command. It downloads the AI model (~2GB, one-time only):</div>
+          <div class="setup-code" id="setup-ollama-cmd">ollama pull qwen2.5:3b &amp;&amp; ollama pull nomic-embed-text
+            <button class="setup-copy-btn" onclick="setupCopyCmd()" title="Copy">&#128203;</button>
+          </div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num">4</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Check the connection</div>
+          <div class="setup-step-desc">Once the download finishes, click below to verify everything is working:</div>
+          <div style="margin-top:0.5rem">
+            <button class="setup-test-btn" id="setup-test-ollama" onclick="setupTestOllama()">Check connection</button>
+          </div>
+          <div class="setup-status" id="setup-ollama-status"></div>
+        </div>
+      </div>
+      <div class="setup-step">
+        <div class="setup-step-num">5</div>
+        <div class="setup-step-body">
+          <div class="setup-step-title">Select Ollama in settings</div>
+          <div class="setup-step-desc">Close this guide, click the &#9881; settings icon, choose <strong>Ollama</strong> as provider and pick your model.</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 
@@ -1396,9 +1847,8 @@ def render_report(
 
 def render_empty_state() -> str:
     """Render the 'no reports yet' page."""
-    # Wrap in a single flex column so the grid layout still works
     sections_html = """\
-  <div class="category-section" style="flex:unset;align-items:center;justify-content:center">
+  <div style="flex:1;display:flex;align-items:center;justify-content:center;min-height:60vh;width:100%">
     <div class="empty-state">
       <h2>No report yet</h2>
       <p>Your first report hasn't been generated yet.</p>

@@ -5,8 +5,10 @@ import sqlite3
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
-_DB_PATH = Path(__file__).resolve().parent.parent / "data" / "articles.db"
-_CACHE_PATH = Path(__file__).resolve().parent.parent / "data" / "tree_cache.json"
+from paths import DATA_DIR
+
+_DB_PATH = DATA_DIR / "articles.db"
+_CACHE_PATH = DATA_DIR / "tree_cache.json"
 _DEFAULT_WINDOW_DAYS = 15
 _MAX_WINDOW_DAYS = 90
 

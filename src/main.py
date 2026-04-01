@@ -4,40 +4,41 @@ import json
 import os
 import sys
 from datetime import date
-from pathlib import Path
 
 import yaml
 
-# Load .env from repo root — works whether called directly or from server.py
+# Ensure paths are initialized before any other local imports
+sys.path.insert(0, os.path.dirname(__file__))
+from paths import CONFIG_FILE, DATA_DIR, OUTPUT_DIR, ENV_FILE, ensure_dirs  # noqa: E402
+
+# Load .env from user data dir
 try:
     from dotenv import load_dotenv
-    load_dotenv(Path(__file__).resolve().parent.parent / ".env")
+    load_dotenv(ENV_FILE)
 except ImportError:
     pass
 
-from fetcher import fetch_category, load_seen_ids, save_seen_ids
-from renderer import render_report
-from store import save_articles, prune
-from summarizer import summarize_category, word_budget
+from fetcher import fetch_category, load_seen_ids, save_seen_ids  # noqa: E402
+from renderer import render_report  # noqa: E402
+from store import save_articles, prune  # noqa: E402
+from summarizer import summarize_category, word_budget  # noqa: E402
 
 
-def load_config(path: str = "config/config.yaml") -> dict:
-    with open(path) as f:
+def load_config() -> dict:
+    with open(CONFIG_FILE) as f:
         return yaml.safe_load(f)
 
 
 def main() -> None:
+    ensure_dirs()
     config = load_config()
 
     reading_time = config.get("reading_time_minutes", 10)
-    data_dir = config.get("data_dir", "data")
-    output_dir = config.get("output", {}).get("dir", "output")
     categories_cfg = config.get("categories", [])
-
     total_weight = sum(c.get("weight", 1) for c in categories_cfg)
 
     # Load already-seen article IDs
-    seen_ids = load_seen_ids(data_dir)
+    seen_ids = load_seen_ids(str(DATA_DIR))
     new_ids: set[str] = set()
 
     # Prune articles older than the rolling window
@@ -61,7 +62,6 @@ def main() -> None:
         articles = fetch_category(cat, seen_ids)
         print(f"          {len(articles)} new article(s) found")
 
-        # Persist raw articles for archive/search
         saved = save_articles(articles, name)
         if saved:
             print(f"          {saved} article(s) saved to archive")
@@ -69,7 +69,6 @@ def main() -> None:
         print(f"[claudio] Summarising '{name}' …")
         summary_md = summarize_category(name, description, articles, budget)
 
-        # Track new IDs for this run
         for a in articles:
             new_ids.add(a["id"])
 
@@ -90,28 +89,23 @@ def main() -> None:
     today = date.today()
     html = render_report(today, summaries, reading_time)
 
-    # Save output
-    os.makedirs(output_dir, exist_ok=True)
-    output_path = os.path.join(output_dir, f"{today.isoformat()}.html")
-    with open(output_path, "w", encoding="utf-8") as f:
-        f.write(html)
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = OUTPUT_DIR / f"{today.isoformat()}.html"
+    output_path.write_text(html, encoding="utf-8")
 
-    # Save summary data so the server can re-render with latest UI
-    json_path = os.path.join(output_dir, f"{today.isoformat()}.json")
-    with open(json_path, "w", encoding="utf-8") as f:
-        json.dump({
+    json_path = OUTPUT_DIR / f"{today.isoformat()}.json"
+    json_path.write_text(
+        json.dumps({
             "date": today.isoformat(),
             "reading_time_minutes": reading_time,
             "summaries": summaries,
-        }, f, ensure_ascii=False, indent=2)
+        }, ensure_ascii=False, indent=2),
+        encoding="utf-8",
+    )
 
-    # Persist seen IDs
-    save_seen_ids(data_dir, seen_ids | new_ids)
-
+    save_seen_ids(str(DATA_DIR), seen_ids | new_ids)
     print(f"\n[claudio] Report saved → {output_path}")
 
 
 if __name__ == "__main__":
-    # Run from repo root: python src/main.py
-    sys.path.insert(0, os.path.dirname(__file__))
     main()

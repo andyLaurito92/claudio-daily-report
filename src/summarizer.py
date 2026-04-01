@@ -5,12 +5,13 @@ from pathlib import Path
 
 import yaml
 
+from paths import CONFIG_FILE  # noqa: E402
+
 WORDS_PER_MINUTE = 200
-_CONFIG_PATH = Path(__file__).resolve().parent.parent / "config" / "config.yaml"
 
 
 def _llm_config() -> dict:
-    with open(_CONFIG_PATH) as f:
+    with open(CONFIG_FILE) as f:
         cfg = yaml.safe_load(f)
     return cfg.get("llm", {"provider": "anthropic", "model": "claude-opus-4-6"})
 
