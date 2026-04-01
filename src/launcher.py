@@ -6,6 +6,7 @@ and shows a system tray icon with Open / Quit actions.
 """
 
 import os
+import socket
 import sys
 import threading
 import time
@@ -31,7 +32,20 @@ except ImportError:
 
 ensure_dirs()
 
-PORT = int(os.environ.get("PORT", 8765))
+def _find_port(preferred: int) -> int:
+    """Return preferred port if free, otherwise let the OS pick one."""
+    for port in (preferred, 0):
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as s:
+            s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+            try:
+                s.bind(("127.0.0.1", port))
+                return s.getsockname()[1]
+            except OSError:
+                continue
+    raise RuntimeError("Could not bind to any port")
+
+
+PORT = _find_port(int(os.environ.get("PORT", 8765)))
 URL = f"http://localhost:{PORT}"
 
 
